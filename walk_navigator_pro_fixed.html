@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Walk Navigator PRO</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#02040a">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --p:#4f7cff;--pg:rgba(79,124,255,.35);--a:#00ff99;--ag:rgba(0,255,153,.28);
+      --d:#ff4f4f;--w:#ffaa00;--gl:rgba(16,20,35,.84);--gb:rgba(255,255,255,.07);
+      --r:24px;--rp:50px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{
+      font-family:'Inter',sans-serif;background:#02040a;color:#fff;overflow:hidden;
+      height:100dvh;width:100vw;position:relative
+    }
+    body{overscroll-behavior:none}
+    .bg-glow{
+      position:fixed;inset:0;z-index:0;pointer-events:none;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%,rgba(79,124,255,.12),transparent),
+        radial-gradient(ellipse 60% 40% at 80% 100%,rgba(0,255,153,.06),transparent)
+    }
+
+    body.night #map{filter:invert(1) hue-rotate(180deg)}
+    body.night .hud-top,body.night .hud-bottom,body.night .chat-box{border-color:rgba(255,80,80,.18)}
+
+    .screen{
+      position:absolute;inset:0;z-index:100;display:none;flex-direction:column;
+      justify-content:center;align-items:center;padding:24px;background:rgba(2,4,10,.97);
+      backdrop-filter:blur(20px);opacity:0;transform:scale(.97);
+      transition:opacity .55s cubic-bezier(.22,1,.36,1),transform .55s cubic-bezier(.22,1,.36,1)
+    }
+    .screen.active{display:flex;opacity:1;transform:scale(1)}
+
+    .logo{
+      font-size:44px;font-weight:800;letter-spacing:-1.5px;text-align:center;
+      background:linear-gradient(135deg,#fff,#8fa8ff);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px
+    }
+    .sub{font-size:14px;color:#8892b0;text-align:center;margin-bottom:32px;max-width:300px;line-height:1.5}
+
+    .glass-card{
+      width:100%;max-width:400px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+      border:1px solid var(--gb);border-radius:var(--r);padding:28px;
+      box-shadow:0 24px 48px -12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08);
+      display:flex;flex-direction:column;gap:12px
+    }
+
+    input,textarea{
+      width:100%;padding:16px 18px;background:rgba(0,0,0,.25);
+      border:1px solid rgba(255,255,255,.08);border-radius:18px;color:#fff;
+      font-size:15px;outline:none;font-family:inherit;
+      transition:border-color .25s ease,box-shadow .25s ease,transform .25s ease
+    }
+    input:focus,textarea:focus{border-color:var(--p);box-shadow:0 0 0 4px var(--pg)}
+    textarea{resize:none;height:80px;font-size:13px}
+
+    .btn{
+      width:100%;padding:16px;border:none;border-radius:var(--rp);font-size:15px;font-weight:700;
+      cursor:pointer;font-family:inherit;color:#fff;position:relative;overflow:hidden;
+      transition:transform .18s ease,box-shadow .3s ease,background .3s ease,opacity .3s ease;
+      display:flex;align-items:center;justify-content:center;gap:8px
+    }
+    .btn:active{transform:scale(.97)}
+    .btn-p{background:linear-gradient(135deg,var(--p),#7c4dff);box-shadow:0 8px 24px rgba(79,124,255,.3)}
+    .btn-a{background:linear-gradient(135deg,var(--a),#00cc77);color:#001a0f;box-shadow:0 8px 24px rgba(0,255,153,.24)}
+    .btn-o{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)}
+    .btn-o:hover{background:rgba(255,255,255,.08)}
+    .btn-s{padding:12px;font-size:13px}
+    .divider{height:1px;background:rgba(255,255,255,.06);margin:4px 0}
+
+    .code-box{
+      width:100%;padding:12px;background:rgba(0,0,0,.3);
+      border:1px dashed rgba(255,255,255,.15);border-radius:16px;
+      font-family:monospace;font-size:11px;color:var(--a);word-break:break-all;
+      max-height:100px;overflow-y:auto
+    }
+    .qr-wrap{
+      display:flex;flex-direction:column;align-items:center;gap:12px;
+      padding:16px;background:rgba(255,255,255,.03);border-radius:20px
+    }
+    .qr-img{width:180px;height:180px;border-radius:16px;background:#fff;padding:8px;display:none}
+
+    .player-list{display:flex;flex-direction:column;gap:10px;width:100%}
+    .player-row{
+      display:flex;align-items:center;gap:14px;padding:16px;
+      background:rgba(255,255,255,.03);border-radius:20px;border:1px solid rgba(255,255,255,.05)
+    }
+    .player-ava{
+      width:48px;height:48px;border-radius:50%;flex-shrink:0;
+      background:linear-gradient(135deg,var(--p),#7c4dff);
+      display:flex;align-items:center;justify-content:center;font-size:22px
+    }
+    .player-ava.g{background:linear-gradient(135deg,var(--a),#00aa55)}
+    .player-name{font-weight:700;font-size:16px}
+    .player-st{font-size:12px;color:var(--a);margin-top:2px}
+    .player-st.wait{color:#667}
+
+    #map{position:absolute;inset:0;z-index:1}
+
+    .game-ui{
+      position:absolute;inset:0;z-index:10;pointer-events:none;display:none;flex-direction:column;
+      justify-content:space-between
+    }
+    .game-ui.active{display:flex}
+
+    .hud-top{
+      margin:10px 10px 0;padding:8px 8px;background:var(--gl);
+      backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--gb);border-radius:22px;
+      display:flex;justify-content:space-between;align-items:center;gap:4px;
+      pointer-events:auto;box-shadow:0 8px 30px rgba(0,0,0,.34);
+      transition:transform .3s ease,opacity .3s ease
+    }
+    .hud-item{flex:1;text-align:center;padding:4px 2px}
+    .hud-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#8892b0;font-weight:600}
+    .hud-val{font-size:15px;font-weight:800;margin-top:2px}
+    .c-xp{color:var(--a);text-shadow:0 0 12px var(--ag)}
+    .c-dist{color:var(--p);text-shadow:0 0 12px var(--pg)}
+    .c-warn{color:var(--w)}
+    .c-pink{color:#ff66aa}
+
+    .prog-wrap{margin:6px 22px 0;pointer-events:none}
+    .prog-track{height:6px;background:rgba(255,255,255,.06);border-radius:10px;overflow:hidden}
+    .prog-fill{
+      height:100%;width:0%;border-radius:10px;background:linear-gradient(90deg,var(--p),var(--a));
+      box-shadow:0 0 12px rgba(0,255,153,.28);
+      transition:width .8s cubic-bezier(.22,1,.36,1)
+    }
+
+    #centerBtn{
+      position:absolute;right:14px;bottom:196px;z-index:10;width:48px;height:48px;border-radius:50%;
+      background:var(--gl);border:1px solid var(--gb);color:#fff;font-size:20px;cursor:pointer;
+      display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px);
+      box-shadow:0 8px 24px rgba(0,0,0,.4);
+      transition:transform .25s ease,opacity .25s ease
+    }
+
+    .weather-pill{
+      position:absolute;top:12px;right:12px;z-index:30;
+      background:rgba(16,20,35,.88);backdrop-filter:blur(14px);
+      border:1px solid rgba(255,255,255,.08);border-radius:999px;
+      padding:8px 12px;font-size:12px;font-weight:700;color:#fff;
+      box-shadow:0 10px 24px rgba(0,0,0,.22);
+      pointer-events:none
+    }
+
+    .zone-fab{
+      position:absolute;top:12px;left:12px;z-index:40;
+      width:44px;height:44px;border-radius:50%;
+      background:rgba(16,20,35,.88);backdrop-filter:blur(14px);
+      border:1px solid rgba(255,255,255,.08);color:#fff;font-size:18px;
+      display:flex;align-items:center;justify-content:center;cursor:pointer;
+      box-shadow:0 10px 24px rgba(0,0,0,.22);
+      transition:transform .2s ease,opacity .2s ease
+    }
+    .zone-fab:active{transform:scale(.94)}
+
+    .zone-panel{
+      position:absolute;top:62px;left:12px;z-index:50;
+      background:rgba(16,20,35,.94);backdrop-filter:blur(14px);
+      border:1px solid rgba(255,255,255,.08);border-radius:18px;
+      padding:10px;display:none;flex-wrap:wrap;gap:8px;width:240px;
+      box-shadow:0 10px 28px rgba(0,0,0,.25)
+    }
+    .zone-panel.open{display:flex}
+    .zone-panel input{
+      width:100%;padding:10px 12px;height:40px;border-radius:12px;font-size:13px
+    }
+    .zone-panel .btn{padding:10px 12px;font-size:12px;border-radius:14px;flex:1}
+    .zone-hint{font-size:11px;color:#8892b0;line-height:1.2;width:100%}
+
+    .hud-bottom{
+      margin:0 10px 10px;padding:12px;background:var(--gl);
+      backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--gb);
+      border-radius:22px;pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:10px;
+      box-shadow:0 12px 36px rgba(0,0,0,.45);
+      max-height:28vh
+    }
+
+    .compass-area{display:flex;align-items:center;gap:14px;width:100%}
+    .compass-wrap{position:relative;width:64px;height:64px;flex-shrink:0}
+    .compass-bg{
+      position:absolute;inset:0;background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.08);border-radius:50%;backdrop-filter:blur(10px)
+    }
+    #compassArrow{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      transition:transform .5s cubic-bezier(.2,.9,.2,1)
+    }
+    .arrow-icon{
+      width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;
+      border-bottom:26px solid #fff;filter:drop-shadow(0 0 8px rgba(79,124,255,.65));transform:translateY(-4px)
+    }
+
+    .nav-info{flex:1;display:flex;flex-direction:column;gap:6px}
+    .nav-instruction{
+      font-size:13px;font-weight:600;color:#ccd6f6;min-height:20px;background:rgba(255,255,255,.04);
+      border-radius:12px;padding:8px 12px;line-height:1.35
+    }
+    .nav-sub{
+      font-size:11px;color:#8892b0;display:flex;gap:12px;padding:0 4px;flex-wrap:wrap
+    }
+
+    .action-bar{
+      display:flex;gap:8px;width:100%;overflow-x:auto;padding-bottom:2px;
+      -webkit-overflow-scrolling:touch;scrollbar-width:none
+    }
+    .action-bar::-webkit-scrollbar{display:none}
+    .action-btn{
+      flex:0 0 auto;min-width:82px;padding:11px 10px;border-radius:18px;background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);color:#ccd6f6;font-size:11px;font-weight:600;
+      cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:3px;transition:transform .2s ease,background .25s ease,border-color .25s ease,box-shadow .25s ease;
+      font-family:inherit;line-height:1.15;will-change:transform
+    }
+    .action-btn .ab-icon{font-size:18px}
+    .action-btn:active{transform:scale(.92);background:rgba(255,255,255,.1)}
+    .action-btn.on{border-color:var(--a);color:var(--a);box-shadow:0 0 16px var(--ag)}
+    .action-btn.on-p{border-color:var(--p);color:#9db8ff;box-shadow:0 0 16px var(--pg)}
+
+    .chat-box{
+      position:absolute;bottom:166px;left:10px;right:10px;max-width:380px;
+      background:var(--gl);backdrop-filter:blur(24px);border:1px solid var(--gb);
+      border-radius:22px;display:none;flex-direction:column;overflow:hidden;
+      box-shadow:0 16px 48px rgba(0,0,0,.5);z-index:15;max-height:42vh
+    }
+    .chat-box.open{display:flex}
+    .chat-top{display:flex;padding:10px;gap:8px;border-bottom:1px solid rgba(255,255,255,.05)}
+    .chat-top button{
+      flex:1;padding:10px;border-radius:50px;border:none;background:rgba(255,255,255,.05);
+      color:#fff;font-size:13px;cursor:pointer;font-weight:600;transition:background .2s ease,transform .2s ease
+    }
+    .chat-top button:active{background:rgba(255,255,255,.12);transform:scale(.97)}
+    .chat-msgs{padding:12px;height:190px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+    .msg{
+      padding:10px 14px;border-radius:18px;font-size:13px;line-height:1.4;max-width:85%;word-wrap:break-word
+    }
+    .msg.me{align-self:flex-end;background:linear-gradient(135deg,rgba(79,124,255,.25),rgba(79,124,255,.1));color:#c3d2ff;border-bottom-right-radius:6px}
+    .msg.peer{align-self:flex-start;background:linear-gradient(135deg,rgba(0,255,153,.15),rgba(0,255,153,.05));color:#b4ffd6;border-bottom-left-radius:6px}
+    .msg-time{font-size:10px;opacity:.5;margin-top:2px}
+    .chat-inp-row{display:flex;padding:10px;gap:8px;border-top:1px solid rgba(255,255,255,.05)}
+    .chat-inp-row input{flex:1;margin:0;padding:10px 16px;border-radius:50px;font-size:13px;background:rgba(0,0,0,.2)}
+    .chat-inp-row button{width:40px;height:40px;border-radius:50%;border:none;background:var(--p);color:#fff;font-size:16px;cursor:pointer}
+
+    .pip{
+      position:absolute;top:100px;right:12px;width:155px;height:210px;background:#000;
+      border-radius:22px;border:2px solid rgba(255,255,255,.12);
+      box-shadow:0 16px 48px rgba(0,0,0,.6);z-index:20;display:none;flex-direction:column;overflow:hidden;
+      transition:transform .35s cubic-bezier(.22,1,.36,1),opacity .35s ease
+    }
+    .pip.active{display:flex}
+    .pip video.remote{width:100%;height:100%;object-fit:cover}
+    .pip video.local{
+      position:absolute;bottom:52px;right:8px;width:50px;height:70px;border-radius:12px;border:2px solid rgba(255,255,255,.8);
+      object-fit:cover;z-index:2
+    }
+    .pip-audio{
+      width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-size:44px;gap:8px;background:linear-gradient(145deg,#0a0f1f,#02040a)
+    }
+    .pip-audio span{font-size:13px;color:#8892b0;font-weight:600}
+    .pip-ctrl{
+      position:absolute;bottom:0;left:0;right:0;height:48px;background:rgba(0,0,0,.5);
+      backdrop-filter:blur(10px);display:flex;justify-content:center;align-items:center;gap:16px
+    }
+    .pip-btn{width:36px;height:36px;border-radius:50%;border:none;color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pip-end{background:var(--d);box-shadow:0 0 16px rgba(255,79,79,.4)}
+    .pip-mute{background:rgba(255,255,255,.15)}
+
+    .modal-ov{
+      position:absolute;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);
+      z-index:200;display:none;justify-content:center;align-items:center;padding:20px;
+      transition:opacity .35s ease
+    }
+    .modal-ov.open{display:flex}
+    .modal-card{
+      background:linear-gradient(180deg,#151b2e,#0f1322);border:1px solid var(--gb);
+      border-radius:22px;width:100%;max-width:400px;padding:24px;
+      box-shadow:0 24px 64px rgba(0,0,0,.6);max-height:88vh;overflow-y:auto;
+      transform:translateY(8px);animation:modalIn .34s cubic-bezier(.22,1,.36,1) forwards
+    }
+    @keyframes modalIn{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+    .modal-h{font-size:20px;font-weight:800;text-align:center;margin-bottom:20px}
+
+    .scan-wrap{
+      position:relative;width:100%;max-width:280px;aspect-ratio:1;border-radius:20px;
+      overflow:hidden;background:#000;margin:0 auto
+    }
+    .scan-video{width:100%;height:100%;object-fit:cover}
+    .scan-ov{
+      position:absolute;inset:0;border:2px dashed var(--a);border-radius:20px;
+      box-shadow:inset 0 0 40px rgba(0,255,153,.2);pointer-events:none
+    }
+    .scan-line{
+      position:absolute;left:10%;right:10%;height:2px;background:var(--a);
+      box-shadow:0 0 12px var(--a);animation:scanline 2.4s linear infinite
+    }
+    @keyframes scanline{
+      0%{top:10%;opacity:0}
+      10%{opacity:1}
+      90%{opacity:1}
+      100%{top:90%;opacity:0}
+    }
+
+    .toast-box{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      z-index:300;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none
+    }
+    .toast{
+      padding:14px 28px;border-radius:50px;font-weight:800;font-size:15px;
+      opacity:0;transform:scale(.88) translateY(20px);
+      transition:all .45s cubic-bezier(.22,1,.36,1);box-shadow:0 12px 32px rgba(0,0,0,.4)
+    }
+    .toast.show{opacity:1;transform:scale(1) translateY(0)}
+    .toast-s{background:linear-gradient(135deg,var(--a),#00cc77);color:#001a0f}
+    .toast-i{background:linear-gradient(135deg,var(--p),#7c4dff);color:#fff}
+    .toast-w{background:linear-gradient(135deg,var(--w),#ff7700);color:#1a0a00}
+
+    .custom-tooltip{
+      background:rgba(10,15,25,.95)!important;border:1px solid rgba(255,255,255,.12)!important;
+      border-radius:12px!important;color:#fff!important;font-family:'Inter',sans-serif!important;
+      font-size:12px!important;font-weight:600!important;padding:6px 14px!important;
+      box-shadow:0 8px 24px rgba(0,0,0,.5)!important
+    }
+    .custom-tooltip::before{border-top-color:rgba(10,15,25,.95)!important}
+    .leaflet-control-attribution{display:none!important}
+
+    @media(max-width:420px){
+      .hud-val{font-size:14px}
+      .action-btn{min-width:76px}
+      .ab-icon{font-size:16px!important}
+      .hud-bottom{max-height:30vh}
+      .chat-box{left:8px;right:8px}
+    }
+    @media(max-height:700px){
+      .chat-msgs{height:130px}
+      .pip{width:120px;height:165px;top:84px}
+      .compass-wrap{width:62px;height:62px}
+      #centerBtn{bottom:192px}
+      .chat-box{bottom:160px}
+      .zone-panel{top:58px}
+    }
+  </style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<div class="screen active" id="scr-land">
+  <div class="logo">WALK NAV</div>
+  <div class="sub">Исследуй мир. Соревнуйся с друзьями. Без серверов.</div>
+  <div class="glass-card">
+    <input id="inp-nick" type="text" placeholder="Ваш никнейм" maxlength="16" autocomplete="off">
+    <input id="inp-key" type="password" placeholder="OpenRouteService API Key (не нужен для соло)" autocomplete="off">
+    <div class="divider"></div>
+    <button class="btn btn-p" onclick="App.host()">➕ Создать игру</button>
+    <button class="btn btn-o" onclick="App.join()">🔗 Присоединиться</button>
+    <button class="btn btn-a" onclick="App.solo()">🎮 Играть соло</button>
+  </div>
+</div>
+
+<div class="screen" id="scr-conn">
+  <div class="glass-card" style="gap:14px">
+    <h2 class="modal-h" id="conn-title">Подключение</h2>
+    <p style="font-size:13px;color:#8892b0;text-align:center" id="conn-desc">Покажите QR или отсканируйте</p>
+
+    <div id="c-host" style="display:none;flex-direction:column;gap:14px;align-items:center">
+      <div class="qr-wrap">
+        <img class="qr-img" id="host-qr" alt="QR">
+        <div class="code-box" id="host-code" style="display:none"></div>
+      </div>
+      <div style="display:flex;gap:8px;width:100%">
+        <button class="btn btn-s btn-o" onclick="Utils.copy('host-code')" style="flex:1">📋 Копировать</button>
+        <button class="btn btn-s btn-o" onclick="Scan.open()" style="flex:1">📷 Сканировать</button>
+      </div>
+      <div class="divider"></div>
+      <textarea id="host-ans" placeholder="Вставьте ответный код..."></textarea>
+      <button class="btn btn-p" onclick="Net.finHost()">✅ Подключиться</button>
+    </div>
+
+    <div id="c-guest" style="display:none;flex-direction:column;gap:14px;align-items:center">
+      <button class="btn btn-o" onclick="Scan.open()">📷 Сканировать QR хоста</button>
+      <div class="divider"></div>
+      <textarea id="guest-offer" placeholder="Или вставьте код вручную..."></textarea>
+      <button class="btn btn-p" onclick="Net.joinGuest()">📡 Получить ответный код</button>
+      <div class="qr-wrap" style="margin-top:4px">
+        <div class="code-box" id="guest-code" style="display:none"></div>
+        <img class="qr-img" id="guest-qr" alt="QR">
+      </div>
+      <button class="btn btn-s btn-o" id="guest-copy" style="display:none" onclick="Utils.copy('guest-code')">📋 Копировать ответ</button>
+    </div>
+
+    <button class="btn btn-s btn-o" onclick="UI.show('scr-land')">← Назад</button>
+  </div>
+</div>
+
+<div class="screen" id="scr-lobby">
+  <div class="glass-card" style="gap:16px">
+    <h2 class="modal-h">Лобби</h2>
+    <div class="player-list">
+      <div class="player-row">
+        <div class="player-ava">👤</div>
+        <div><div class="player-name" id="lb-host">Вы (Хост)</div><div class="player-st">✅ Готов</div></div>
+      </div>
+      <div class="player-row">
+        <div class="player-ava g">👤</div>
+        <div><div class="player-name" id="lb-guest">Ожидание...</div><div class="player-st wait" id="lb-guest-st">Не подключен</div></div>
+      </div>
+    </div>
+    <div id="lb-host-ctrl" style="display:none;flex-direction:column;gap:12px">
+      <div class="divider"></div>
+      <p style="font-size:13px;color:#8892b0;text-align:center">Оба игрока получат одинаковую дистанцию. Кто быстрее?</p>
+      <button class="btn btn-a" onclick="Game.hostStart()">🚀 Начать гонку!</button>
+    </div>
+    <div id="lb-guest-wait" style="display:none;text-align:center;color:#8892b0;font-size:14px;padding:10px">⏳ Ждём хоста...</div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div class="weather-pill" id="weather-pill">--</div>
+<button class="zone-fab" id="zone-fab" onclick="UI.toggleZonePanel()">🗺️</button>
+
+<div class="zone-panel" id="zone-panel">
+  <input id="zone-radius" type="number" value="300" min="50" step="50" placeholder="Зона, м">
+  <button class="btn btn-o btn-s" onclick="Zone.useRadius()">Круг</button>
+  <button class="btn btn-o btn-s" onclick="Zone.startDraw()">Обвести</button>
+  <button class="btn btn-o btn-s" onclick="Zone.finishDraw()">Готово</button>
+  <button class="btn btn-o btn-s" onclick="Zone.clear()">Сброс</button>
+  <div class="zone-hint">Зона ограничивает цели и движение.</div>
+</div>
+
+<div class="game-ui" id="game-ui">
+  <div class="hud-top">
+    <div class="hud-item"><div class="hud-label">LVL</div><div class="hud-val" id="h-lvl">1</div></div>
+    <div class="hud-item"><div class="hud-label">XP</div><div class="hud-val c-xp" id="h-xp">0</div></div>
+    <div class="hud-item"><div class="hud-label">Цель</div><div class="hud-val c-dist" id="h-dist">--</div></div>
+    <div class="hud-item"><div class="hud-label">Шаги</div><div class="hud-val c-warn" id="h-steps">0</div></div>
+  </div>
+
+  <div class="prog-wrap"><div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div></div>
+
+  <div style="flex:1"></div>
+  <button id="centerBtn" onclick="MM.center()">🎯</button>
+
+  <div class="hud-bottom">
+    <div class="compass-area">
+      <div class="compass-wrap">
+        <div class="compass-bg"></div>
+        <div id="compassArrow"><div class="arrow-icon"></div></div>
+      </div>
+      <div class="nav-info">
+        <div class="nav-instruction" id="nav-instr">Двигайтесь к цели</div>
+        <div class="nav-sub">
+          <span id="nav-speed">0 км/ч</span>
+          <span id="nav-kcal">0 ккал</span>
+          <span id="nav-time">00:00</span>
+          <span id="nav-mode">Solo</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar" id="action-bar">
+      <button class="action-btn" onclick="Game.skip()"><span class="ab-icon">⏩</span>Пропуск</button>
+      <button class="action-btn" id="btn-mag" onclick="Game.magnet()"><span class="ab-icon">🧲</span>Магнит</button>
+      <button class="action-btn" id="btn-sat" onclick="MM.toggleSat()"><span class="ab-icon">🛰️</span>Спутник</button>
+      <button class="action-btn" id="btn-rot" onclick="MM.toggleRotate()"><span class="ab-icon">🧭</span>Авто</button>
+      <button class="action-btn" id="btn-night" onclick="MM.toggleNight()"><span class="ab-icon">🌙</span>Ночь</button>
+      <button class="action-btn" id="btn-trail" onclick="MM.toggleTrail()"><span class="ab-icon">👣</span>След</button>
+      <button class="action-btn" id="btn-torch" onclick="Torch.toggle()"><span class="ab-icon">🔦</span>Фонарь</button>
+      <button class="action-btn" id="btn-heatmap" onclick="MM.toggleHeatmap()"><span class="ab-icon">🌡️</span>Тепло</button>
+      <button class="action-btn" onclick="Chat.toggle()"><span class="ab-icon">💬</span>Чат</button>
+      <button class="action-btn" id="btn-code" onclick="Net.showCode()"><span class="ab-icon">📡</span>Код</button>
+      <button class="action-btn" onclick="Game.leaderboard()"><span class="ab-icon">🏆</span>Топ</button>
+      <button class="action-btn" onclick="Game.showHistory()"><span class="ab-icon">📜</span>История</button>
+      <button class="action-btn" onclick="Game.shareResult()"><span class="ab-icon">📤</span>Поделиться</button>
+      <button class="action-btn" onclick="Game.showStats()"><span class="ab-icon">📊</span>Статы</button>
+      <button class="action-btn" id="btn-zoom-p" onclick="MM.zoomIn()"><span class="ab-icon">🔍</span>Ближе</button>
+    </div>
+  </div>
+</div>
+
+<div class="chat-box" id="chat-box">
+  <div class="chat-top">
+    <button onclick="Call.start(false)">📞 Аудио</button>
+    <button onclick="Call.start(true)">📹 Видео</button>
+    <button onclick="Chat.toggle()" style="flex:.3;font-size:18px">✕</button>
+  </div>
+  <div class="chat-msgs" id="chat-msgs"></div>
+  <div class="chat-inp-row">
+    <input type="text" id="chat-inp" placeholder="Сообщение..." autocomplete="off">
+    <button onclick="Chat.send()">➤</button>
+  </div>
+</div>
+
+<div class="pip" id="pip">
+  <div class="pip-audio" id="pip-audio"><span>📞</span><span id="pip-timer">0:00</span></div>
+  <video class="remote" id="vid-remote" autoplay playsinline style="display:none"></video>
+  <video class="local" id="vid-local" autoplay playsinline muted style="display:none"></video>
+  <div class="pip-ctrl">
+    <button class="pip-btn pip-mute" id="mute-btn" onclick="Call.toggleMute()">🎤</button>
+    <button class="pip-btn pip-mute" onclick="Call.toggleCam()">📷</button>
+    <button class="pip-btn pip-end" onclick="Call.end()">📵</button>
+  </div>
+</div>
+
+<div class="toast-box" id="toast-box"></div>
+
+<div class="modal-ov" id="m-call">
+  <div class="modal-card" style="text-align:center">
+    <h2 class="modal-h">📞 Входящий звонок</h2>
+    <p style="color:#8892b0;margin-bottom:20px" id="call-type-txt">Аудиозвонок</p>
+    <button class="btn btn-a" onclick="Call.accept(true)">Принять</button>
+    <button class="btn btn-o" style="margin-top:8px" onclick="Call.accept(false)">Отклонить</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-lb">
+  <div class="modal-card">
+    <h2 class="modal-h">🏆 Рейтинг дня</h2>
+    <div id="lb-list"></div>
+    <button class="btn btn-a" style="margin-top:16px" onclick="Game.shareResult()">📤 Поделиться</button>
+    <button class="btn btn-o" style="margin-top:8px" onclick="UI.closeModal('m-lb')">Закрыть</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-history">
+  <div class="modal-card">
+    <h2 class="modal-h">📜 История прогулок</h2>
+    <div id="history-list" style="max-height:320px;overflow-y:auto"></div>
+    <button class="btn btn-o" style="margin-top:16px" onclick="UI.closeModal('m-history')">Закрыть</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-stats">
+  <div class="modal-card">
+    <h2 class="modal-h">📊 Статистика</h2>
+    <div id="stats-content"></div>
+    <button class="btn btn-o" style="margin-top:16px" onclick="UI.closeModal('m-stats')">Закрыть</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-p2p">
+  <div class="modal-card">
+    <h2 class="modal-h">📡 Код комнаты</h2>
+    <div class="qr-wrap"><img class="qr-img" id="modal-qr" style="display:block" alt="QR"></div>
+    <div class="code-box" id="modal-code" style="margin-top:12px"></div>
+    <button class="btn btn-o" style="margin-top:16px" onclick="UI.closeModal('m-p2p')">Закрыть</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-scan">
+  <div class="modal-card" style="text-align:center">
+    <h2 class="modal-h">📷 Сканер QR</h2>
+    <div class="scan-wrap">
+      <video class="scan-video" id="scan-video" autoplay playsinline muted></video>
+      <div class="scan-ov"><div class="scan-line"></div></div>
+    </div>
+    <p style="font-size:12px;color:#8892b0;margin-top:12px">Наведите камеру на QR-код</p>
+    <button class="btn btn-o" style="margin-top:16px" onclick="Scan.close()">Отмена</button>
+  </div>
+</div>
+
+<div class="modal-ov" id="m-ach">
+  <div class="modal-card" style="text-align:center">
+    <div style="font-size:64px;margin-bottom:12px" id="ach-icon">🏅</div>
+    <h2 class="modal-h" id="ach-title">Достижение!</h2>
+    <p style="color:#8892b0;margin-bottom:20px" id="ach-desc">Описание</p>
+    <button class="btn btn-a" onclick="UI.closeModal('m-ach')">Забрать!</button>
+  </div>
+</div>
+
+<script>
+const C={ZOOM:18,CAP:15,MCAP:50,MTIME:30000,XP:10,XPH:20,LVL:50,STEP:.72,CAL:.045,LOOT:.35,VTHROT:8000,RETRY:2,ACHV:[
+  {id:'first',icon:'👟',title:'Первые шаги',desc:'Пройдите первые 100м',check:s=>s.totalDist>100},
+  {id:'km1',icon:'🏃',title:'Километр!',desc:'Пройдите 1 км',check:s=>s.totalDist>1000},
+  {id:'km5',icon:'🚀',title:'5 километров',desc:'Пройдите 5 км',check:s=>s.totalDist>5000},
+  {id:'km10',icon:'🌟',title:'Марафонец',desc:'10 км пройдено',check:s=>s.totalDist>10000},
+  {id:'loot5',icon:'🎁',title:'Коллекционер',desc:'Собрать 5 лутов',check:s=>s.lootCount>=5},
+  {id:'lvl5',icon:'⭐',title:'Ветеран',desc:'Достичь 5 уровня',check:s=>s.level>=5},
+  {id:'lvl10',icon:'💎',title:'Легенда',desc:'Достичь 10 уровня',check:s=>s.level>=10},
+  {id:'steps1k',icon:'🦵',title:'Тысяча шагов',desc:'1000 шагов за сессию',check:s=>Math.floor(s.totalDist/C.STEP)>=1000},
+]};
+
+const Utils={S:{get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}},del(k){try{localStorage.removeItem(k)}catch{}}},async copy(id){const el=document.getElementById(id);if(!el)return;const text=(el.value ?? el.textContent ?? '').trim();try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);else{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}Toast.show('Скопировано!','i')}catch{Toast.show('Не удалось скопировать','i')}},hash(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h)+s.charCodeAt(i),h|=0;return Math.abs(h)},async fetch(url,opts,n=C.RETRY){for(let i=0;i<=n;i++){try{const r=await fetch(url,opts);if(!r.ok)throw 0;return await r.json()}catch(e){if(i===n)throw e;await new Promise(r=>setTimeout(r,1000*(i+1)))}}},vib(p){if(navigator.vibrate)navigator.vibrate(p)},dist(a1,o1,a2,o2){const R=6371000,da=(a2-a1)*Math.PI/180,do2=(o2-o1)*Math.PI/180;const a=Math.sin(da/2)**2+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(do2/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))},bearing(a1,o1,a2,o2){const d=(o2-o1)*Math.PI/180;const y=Math.sin(d)*Math.cos(a2*Math.PI/180);const x=Math.cos(a1*Math.PI/180)*Math.sin(a2*Math.PI/180)-Math.sin(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.cos(d);return(Math.atan2(y,x)*180/Math.PI+360)%360},qr(text,id){const url='https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(text);const img=document.getElementById(id);if(img){img.src=url;img.style.display='block'}},fmtTime(s){const m=Math.floor(s/60).toString().padStart(2,'0');return m+':'+(s%60).toString().padStart(2,'0')},fmtDist(m){return m>=1000?(m/1000).toFixed(1)+' км':Math.round(m)+' м'}};
+
+const Aud={ctx:null,init(){if(!this.ctx)this.ctx=new(window.AudioContext||window.webkitAudioContext)();if(this.ctx.state==='suspended')this.ctx.resume()},play(f,t,d,v=.1){if(!this.ctx)return;const o=this.ctx.createOscillator(),g=this.ctx.createGain();o.connect(g);g.connect(this.ctx.destination);o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,this.ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,this.ctx.currentTime+d);o.start();o.stop(this.ctx.currentTime+d)},win(){this.play(523,'sine',.12);setTimeout(()=>this.play(659,'sine',.12),120);setTimeout(()=>this.play(784,'sine',.25),240)},loot(){this.play(880,'sine',.1);setTimeout(()=>this.play(1175,'triangle',.2),100)},step(){this.play(180,'triangle',.04,.06)},near(){this.play(440,'sine',.06,.08)}};
+
+const Voice={last:0,say(t){if(!window.speechSynthesis)return;const n=Date.now();if(n-this.last<C.VTHROT)return;this.last=n;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='ru-RU';u.rate=1.05;speechSynthesis.speak(u)}};
+
+const Toast={q:[],active:false,show(msg,type='s'){this.q.push({msg,type});if(!this.active)this._run()},_run(){if(!this.q.length){this.active=false;return}this.active=true;const{msg,type}=this.q.shift();const el=document.createElement('div');el.className=`toast toast-${type}`;el.textContent=msg;document.getElementById('toast-box').appendChild(el);requestAnimationFrame(()=>el.classList.add('show'));setTimeout(()=>{el.classList.remove('show');setTimeout(()=>{el.remove();this._run()},420)},2400)}};
+
+const St={xp:Utils.S.get('xp',0),level:Utils.S.get('lvl',1),skips:Utils.S.get('sk',3),magnets:Utils.S.get('mg',2),totalDist:Utils.S.get('td',0),lootCount:Utils.S.get('lc',0),history:Utils.S.get('hist',[]),achievements:Utils.S.get('ach',[]),totalWalks:Utils.S.get('tw',0),save(){Utils.S.set('xp',this.xp);Utils.S.set('lvl',this.level);Utils.S.set('sk',this.skips);Utils.S.set('mg',this.magnets);Utils.S.set('td',this.totalDist);Utils.S.set('lc',this.lootCount);Utils.S.set('hist',this.history);Utils.S.set('ach',this.achievements);Utils.S.set('tw',this.totalWalks)},addXP(base){let g=base;if(this.level>3)g+=C.XPH-C.XP;if(Game.magnetOn)g+=5;this.xp+=g;const nl=Math.floor(this.xp/C.LVL)+1;if(nl>this.level){this.level=nl;this.skips++;this.magnets++;Toast.show(`🆙 Уровень ${this.level}!`,'s');Aud.win()}else{Toast.show(`+${g} XP`,'s');Aud.win()}UI.updHUD();this.save();this.checkAch();return g},checkAch(){C.ACHV.forEach(a=>{if(!this.achievements.includes(a.id)&&a.check(this)){this.achievements.push(a.id);this.save();setTimeout(()=>{document.getElementById('ach-icon').textContent=a.icon;document.getElementById('ach-title').textContent=a.title;document.getElementById('ach-desc').textContent=a.desc;UI.openModal('m-ach')},500)}})},addHistory(e){this.history.unshift(e);if(this.history.length>30)this.history.pop();this.totalWalks++;this.save()}};
+
+const UI={show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));const el=document.getElementById(id);if(el)el.classList.add('active')},openModal(id){document.getElementById(id).classList.add('open')},closeModal(id){document.getElementById(id).classList.remove('open')},updHUD(){document.getElementById('h-lvl').textContent=St.level;document.getElementById('h-xp').textContent=St.xp},setProg(pct){document.getElementById('prog-fill').style.width=Math.max(0,Math.min(100,pct))+'%'},setInstr(txt){document.getElementById('nav-instr').textContent=txt||'Двигайтесь к цели'},toggleZonePanel(){document.getElementById('zone-panel').classList.toggle('open')}};
+
+function pointInPolygon(point,vs){const x=point[1], y=point[0];let inside=false;for(let i=0,j=vs.length-1;i<vs.length;j=i++){const xi=vs[i][1], yi=vs[i][0];const xj=vs[j][1], yj=vs[j][0];const hit=((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi);if(hit)inside=!inside;}return inside}
+
+const Zone={mode:'off',center:null,radius:300,circle:null,poly:null,pts:[],drawHandler:null,setCenter(lat,lon){this.center=[lat,lon];this.redraw()},useRadius(){this.mode='radius';this.radius=Math.max(50,Number(document.getElementById('zone-radius').value)||300);this.redraw();Toast.show(`Зона: ${this.radius} м`,'i')},startDraw(){if(!MM.map)return;this.mode='draw';this.pts=[];this.redraw();Toast.show('Тапай по карте, чтобы обвести зону','i');if(this.drawHandler)MM.map.off('click',this.drawHandler);this.drawHandler=e=>this.addPoint(e.latlng.lat,e.latlng.lng);MM.map.on('click',this.drawHandler)},addPoint(lat,lon){this.pts.push([lat,lon]);this.redraw()},finishDraw(){if(this.pts.length<3){Toast.show('Нужно минимум 3 точки','i');return}if(this.drawHandler)MM.map.off('click',this.drawHandler);this.drawHandler=null;this.mode='poly';this.redraw();Toast.show('Зона обведена','s')},clear(){this.mode='off';this.pts=[];if(this.circle){MM.map.removeLayer(this.circle);this.circle=null}if(this.poly){MM.map.removeLayer(this.poly);this.poly=null}if(this.drawHandler)MM.map.off('click',this.drawHandler);this.drawHandler=null;Toast.show('Ограничение снято','i')},redraw(){if(!MM.map)return;if(this.circle){MM.map.removeLayer(this.circle);this.circle=null}if(this.poly){MM.map.removeLayer(this.poly);this.poly=null}if(this.mode==='radius' && this.center){this.circle=L.circle(this.center,{radius:this.radius,color:'#00ff99',fillColor:'#00ff99',fillOpacity:.08,weight:2}).addTo(MM.map)}if((this.mode==='draw' || this.mode==='poly') && this.pts.length>=2){this.poly=L.polygon(this.pts,{color:'#00ff99',fillColor:'#00ff99',fillOpacity:.08,weight:2}).addTo(MM.map)}},inside(lat,lon){if(this.mode==='radius' && this.center){return Utils.dist(this.center[0],this.center[1],lat,lon) <= this.radius}if((this.mode==='draw' || this.mode==='poly') && this.pts.length>=3){return pointInPolygon([lat,lon],this.pts)}return true}};
+
+const Scan={stream:null,iv:null,open(){UI.openModal('m-scan');navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{this.stream=s;const v=document.getElementById('scan-video');v.srcObject=s;this.iv=setInterval(()=>this._scan(v),300)}).catch(()=>Toast.show('Нет доступа к камере','i'))},close(){clearInterval(this.iv);if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}UI.closeModal('m-scan')},_scan(v){if(v.readyState!==v.HAVE_ENOUGH_DATA)return;const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d');ctx.drawImage(v,0,0,c.width,c.height);const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height,{inversionAttempts:'dontInvert'});if(code&&code.data.length>20){this.close();const t=code.data;if(document.getElementById('guest-offer').offsetParent){document.getElementById('guest-offer').value=t;Net.joinGuest()}else if(document.getElementById('host-ans').offsetParent){document.getElementById('host-ans').value=t;Net.finHost()}else Toast.show('QR принят!','s')}}};
+
+const Torch={track:null,on:false,async toggle(){try{if(!this.track){const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});this.track=s.getVideoTracks()[0]}const caps=this.track.getCapabilities();if(!caps.torch){Toast.show('Фонарь не поддерживается','i');return}this.on=!this.on;await this.track.applyConstraints({advanced:[{torch:this.on}]});document.getElementById('btn-torch').classList.toggle('on',this.on);Toast.show(this.on?'🔦 Фонарь ON':'🔦 Фонарь OFF','i')}catch{Toast.show('Ошибка фонаря','i')}}};
+
+const MM={map:null,uMk:null,tMk:null,rLine:null,pMk:null,lMk:null,trail:null,trailPts:[],heatCircles:[],dark:null,sat:null,lbl:null,isSat:false,autoRot:false,nightMode:false,heatmap:false,autoCenter:true,tLat:0,tLon:0,init(lat,lon){if(this.map){try{this.map.remove()}catch{}}this.map=L.map('map',{zoomControl:false,attributionControl:false,maxZoom:C.ZOOM}).setView([lat,lon],16);this.dark=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:C.ZOOM}).addTo(this.map);this.sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:C.ZOOM});this.lbl=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{maxZoom:C.ZOOM});const icon=L.divIcon({className:'',html:`<div style="width:22px;height:22px;background:#4f7cff;border-radius:50%;border:3px solid #fff;box-shadow:0 0 20px #4f7cff,0 0 40px rgba(79,124,255,.3)"></div>`,iconSize:[22,22],iconAnchor:[11,11]});this.uMk=L.marker([lat,lon],{icon}).addTo(this.map);this.trail=L.polyline([],{color:'#00ff99',weight:4,opacity:.65,lineCap:'round'}).addTo(this.map);this.map.on('dragstart',()=>{this.autoCenter=false;document.getElementById('centerBtn').style.display='flex'});Zone.setCenter(lat,lon)},zoomIn(){if(this.map)this.map.zoomIn()},center(){this.autoCenter=true;document.getElementById('centerBtn').style.display='none';this.map.panTo(this.uMk.getLatLng(),{animate:true})},toggleSat(){const b=document.getElementById('btn-sat');if(this.isSat){this.map.removeLayer(this.sat);this.map.removeLayer(this.lbl);this.dark.addTo(this.map);b.classList.remove('on')}else{this.map.removeLayer(this.dark);this.sat.addTo(this.map);this.lbl.addTo(this.map);b.classList.add('on')}this.isSat=!this.isSat},toggleRotate(){this.autoRot=!this.autoRot;document.getElementById('btn-rot').classList.toggle('on',this.autoRot);Toast.show(this.autoRot?'🧭 Автоповорот ON':'🧭 Автоповорот OFF','i')},toggleNight(){this.nightMode=!this.nightMode;document.body.classList.toggle('night',this.nightMode);document.getElementById('btn-night').classList.toggle('on',this.nightMode);Toast.show(this.nightMode?'🌙 Ночной режим':'☀️ Дневной режим','i')},toggleTrail(){const b=document.getElementById('btn-trail'),on=!b.classList.contains('on');if(on){this.trail.setLatLngs(this.trailPts);b.classList.add('on')}else{this.trail.setLatLngs([]);b.classList.remove('on')}},toggleHeatmap(){this.heatmap=!this.heatmap;document.getElementById('btn-heatmap').classList.toggle('on',this.heatmap);if(!this.heatmap){this.heatCircles.forEach(c=>this.map.removeLayer(c));this.heatCircles=[]}Toast.show(this.heatmap?'🌡️ Тепловая карта ON':'🌡️ OFF','i')},addHeat(lat,lon){if(!this.heatmap)return;const c=L.circle([lat,lon],{radius:12,color:'rgba(255,80,0,.0)',fillColor:'rgba(255,80,0,.18)',fillOpacity:.18,stroke:false}).addTo(this.map);this.heatCircles.push(c);if(this.heatCircles.length>200)this.map.removeLayer(this.heatCircles.shift())},addTrail(lat,lon){this.trailPts.push([lat,lon]);if(document.getElementById('btn-trail').classList.contains('on'))this.trail.setLatLngs(this.trailPts);this.addHeat(lat,lon)},setTarget(lat,lon,label){if(this.tMk)this.map.removeLayer(this.tMk);const icon=L.divIcon({className:'',html:`<div style="width:24px;height:24px;background:#ff4f4f;border-radius:50%;border:3px solid #fff;box-shadow:0 0 20px #ff4f4f;animation:pulse 1.2s infinite"></div><style>@keyframes pulse{0%{transform:scale(1);opacity:1}100%{transform:scale(2.8);opacity:0}}</style>`,iconSize:[24,24],iconAnchor:[12,12]});this.tMk=L.marker([lat,lon],{icon}).addTo(this.map);this.tMk.bindTooltip(label,{permanent:true,direction:'top',offset:[0,-18],className:'custom-tooltip'}).openTooltip();this.tLat=lat;this.tLon=lon},drawRoute(lat1,lon1,lat2,lon2){if(!App.apiKey){this.fallback(lat1,lon1,lat2,lon2);return}Utils.fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson',{method:'POST',headers:{'Authorization':App.apiKey,'Content-Type':'application/json'},body:JSON.stringify({coordinates:[[lon1,lat1],[lon2,lat2]]})}).then(d=>{if(d.features?.length){const coords=d.features[0].geometry.coordinates.map(c=>[c[1],c[0]]);if(this.rLine)this.map.removeLayer(this.rLine);this.rLine=L.polyline(coords,{color:'#4f7cff',weight:6,opacity:.85,lineCap:'round'}).addTo(this.map);const segs=d.features[0].properties.segments;if(segs?.length){Game.steps=segs[0].steps.map(s=>({txt:s.instruction,coord:coords[s.way_points[1]]})).filter(s=>s.txt);Game.stepIdx=0}}else this.fallback(lat1,lon1,lat2,lon2)}).catch(()=>this.fallback(lat1,lon1,lat2,lon2))},fallback(a1,o1,a2,o2){if(this.rLine)this.map.removeLayer(this.rLine);this.rLine=L.polyline([[a1,o1],[a2,o2]],{color:'#ff4f4f',weight:4,dashArray:'12,10'}).addTo(this.map);Game.steps=[]},spawnLoot(tlat,tlon){if(this.lMk)this.map.removeLayer(this.lMk);if(Math.random()>C.LOOT)return;const p=this.uMk.getLatLng();const lat=p.lat+(tlat-p.lat)*(.3+Math.random()*.4),lng=p.lng+(tlon-p.lng)*(.3+Math.random()*.4);const rewards=['🎁','💎','⭐','🔮','🎯'];const icon=L.divIcon({className:'',html:`<div style="font-size:26px;animation:float 2.2s ease-in-out infinite;filter:drop-shadow(0 4px 8px rgba(255,170,0,.4))">${rewards[Math.floor(Math.random()*rewards.length)]}</div><style>@keyframes float{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-10px) rotate(5deg)}}</style>`,iconSize:[26,26],iconAnchor:[13,13]});this.lMk=L.marker([lat,lng],{icon}).addTo(this.map);this.lMk.bindTooltip('Бонус!',{direction:'top',className:'custom-tooltip'})},updPeer(lat,lon){if(!this.pMk){const icon=L.divIcon({className:'',html:`<div style="width:18px;height:18px;background:#00ff99;border-radius:50%;border:3px solid #fff;box-shadow:0 0 15px #00ff99"></div>`,iconSize:[18,18],iconAnchor:[9,9]});this.pMk=L.marker([lat,lon],{icon}).addTo(this.map)}else this.pMk.setLatLng([lat,lon])}};
+
+const Compass={hdg:0,init(){window.addEventListener('deviceorientationabsolute',e=>{if(e.webkitCompassHeading)this.hdg=e.webkitCompassHeading;else if(e.alpha)this.hdg=(360-e.alpha)%360},true)}};
+
+const Weather={last:0,async fetch(lat,lon){const now=Date.now();if(now-this.last<120000)return;this.last=now;try{const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);const j=await r.json();const w=j.current_weather;const e=w.weathercode<3?'☀️':w.weathercode<50?'☁️':w.weathercode<80?'🌧️':'❄️';document.getElementById('weather-pill').textContent=`${e} ${Math.round(w.temperature)}°`}catch{}}};
+
+const Net={pc:null,ch:null,cfg:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]},isHost:false,makeOffer(){this.isHost=true;document.getElementById('host-code').textContent='';document.getElementById('host-code').style.display='none';document.getElementById('host-qr').style.display='none';this.pc=new RTCPeerConnection(this.cfg);this._setupCh(this.pc.createDataChannel('g',{ordered:true}));this.pc.onicecandidate=e=>{if(!e.candidate){const code=btoa(JSON.stringify(this.pc.localDescription));document.getElementById('host-code').textContent=code;document.getElementById('host-code').style.display='block';Utils.qr(code,'host-qr')}};this.pc.createOffer().then(o=>this.pc.setLocalDescription(o))},joinGuest(){this.isHost=false;const str=document.getElementById('guest-offer').value.trim();if(!str)return Toast.show('Вставьте код!','i');try{const offer=JSON.parse(atob(str));this.pc=new RTCPeerConnection(this.cfg);this.pc.ondatachannel=e=>this._setupCh(e.channel);this.pc.onicecandidate=e=>{if(!e.candidate){const code=btoa(JSON.stringify(this.pc.localDescription));document.getElementById('guest-code').textContent=code;document.getElementById('guest-code').style.display='block';document.getElementById('guest-qr').style.display='block';Utils.qr(code,'guest-qr');document.getElementById('guest-copy').style.display='block'}};this.pc.setRemoteDescription(offer).then(()=>this.pc.createAnswer()).then(a=>this.pc.setLocalDescription(a))}catch{Toast.show('Неверный код!','i')}},finHost(){const str=document.getElementById('host-ans').value.trim();if(!str)return Toast.show('Вставьте код!','i');try{this.pc.setRemoteDescription(JSON.parse(atob(str)))}catch{Toast.show('Неверный код!','i')}},_setupCh(ch){this.ch=ch;ch.onopen=()=>{Toast.show('✅ Друг подключен!','s');UI.show('scr-lobby');document.getElementById('lb-guest').textContent='Игрок 2';document.getElementById('lb-guest-st').textContent='✅ В сети';document.getElementById('lb-guest-st').className='player-st';if(Net.isHost)document.getElementById('lb-host-ctrl').style.display='flex';else document.getElementById('lb-guest-wait').style.display='block'};ch.onclose=()=>{Toast.show('Соединение разорвано','i');if(MM.pMk){MM.map.removeLayer(MM.pMk);MM.pMk=null}Call.end()};ch.onmessage=e=>{const d=JSON.parse(e.data);if(d.t==='pos')MM.updPeer(d.lat,d.lon);if(d.t==='chat')Chat.add(d.msg,false);if(d.t==='cfg'){App.pDist=d.dist;App.pPos=d.pos;Game.guestStart()}if(d.t==='call-offer'){Call.pending=d;document.getElementById('call-type-txt').textContent=d.video?'📹 Видеозвонок':'📞 Аудиозвонок';UI.openModal('m-call')}if(d.t==='call-ans')Call.onAnswer(d.sdp);if(d.t==='call-end')Call.end();if(d.t==='call-rej'){Call.end();Toast.show('Звонок отклонён','i')}if(d.t==='ice'&&Call.pc)Call.pc.addIceCandidate(new RTCIceCandidate(d.c)).catch(()=>{})}},send(o){if(this.ch?.readyState==='open')this.ch.send(JSON.stringify(o))},showCode(){if(App.solo){Toast.show('В соло режиме код недоступен','i');return}const code=document.getElementById('host-code').textContent||document.getElementById('guest-code').textContent||'Нет данных';document.getElementById('modal-code').textContent=code;if(code!=='Нет данных'){document.getElementById('modal-qr').style.display='block';Utils.qr(code,'modal-qr')}else{document.getElementById('modal-qr').src='';document.getElementById('modal-qr').style.display='none'}UI.openModal('m-p2p')}};
+
+const Chat={toggle(){document.getElementById('chat-box').classList.toggle('open')},send(){const inp=document.getElementById('chat-inp');const msg=inp.value.trim();if(!msg||!Net.ch)return;Net.send({t:'chat',msg});this.add(msg,true);inp.value=''},add(msg,me){const d=document.createElement('div');d.className=`msg ${me?'me':'peer'}`;const now=new Date();const time=now.getHours()+':'+now.getMinutes().toString().padStart(2,'0');d.innerHTML=`${msg}<div class="msg-time">${time}</div>`;const b=document.getElementById('chat-msgs');b.appendChild(d);b.scrollTop=b.scrollHeight}};
+
+const Call={pc:null,stream:null,pending:null,muted:false,camOff:false,callSec:0,callTimer:null,async start(video){if(!Net.ch)return Toast.show('Нет соединения!','i');try{this.stream=await navigator.mediaDevices.getUserMedia({audio:true,video});this._show(video);this.pc=new RTCPeerConnection(Net.cfg);this.stream.getTracks().forEach(t=>this.pc.addTrack(t,this.stream));this.pc.ontrack=e=>{document.getElementById('vid-remote').srcObject=e.streams[0]};this.pc.onicecandidate=e=>{if(e.candidate)Net.send({t:'ice',c:e.candidate})};const o=await this.pc.createOffer();await this.pc.setLocalDescription(o);Net.send({t:'call-offer',sdp:this.pc.localDescription,video})}catch{Toast.show('Нет доступа к камере/микрофону','i');this.end()}},async accept(ok){UI.closeModal('m-call');if(!ok||!this.pending){Net.send({t:'call-rej'});this.pending=null;return}try{const v=this.pending.video;this.stream=await navigator.mediaDevices.getUserMedia({audio:true,video:v});this._show(v);this.pc=new RTCPeerConnection(Net.cfg);this.stream.getTracks().forEach(t=>this.pc.addTrack(t,this.stream));this.pc.ontrack=e=>{document.getElementById('vid-remote').srcObject=e.streams[0]};this.pc.onicecandidate=e=>{if(e.candidate)Net.send({t:'ice',c:e.candidate})};await this.pc.setRemoteDescription(new RTCSessionDescription(this.pending.sdp));const a=await this.pc.createAnswer();await this.pc.setLocalDescription(a);Net.send({t:'call-ans',sdp:this.pc.localDescription})}catch{Toast.show('Ошибка звонка','i');this.end()}this.pending=null},async onAnswer(sdp){if(!this.pc)return;try{await this.pc.setRemoteDescription(new RTCSessionDescription(sdp))}catch{}},end(){clearInterval(this.callTimer);this.callSec=0;if(this.pc){this.pc.close();this.pc=null}if(this.stream){this.stream.getTracks().forEach(t=>t.stop());this.stream=null}document.getElementById('pip').classList.remove('active');document.getElementById('vid-remote').srcObject=null;document.getElementById('vid-local').srcObject=null;Net.send({t:'call-end'})},toggleMute(){if(!this.stream)return;this.muted=!this.muted;this.stream.getAudioTracks().forEach(t=>t.enabled=!this.muted);document.getElementById('mute-btn').textContent=this.muted?'🔇':'🎤';Toast.show(this.muted?'Микрофон выкл':'Микрофон вкл','i')},toggleCam(){if(!this.stream)return;this.camOff=!this.camOff;this.stream.getVideoTracks().forEach(t=>t.enabled=!this.camOff);Toast.show(this.camOff?'Камера выкл':'Камера вкл','i')},_show(video){document.getElementById('vid-local').srcObject=this.stream;document.getElementById('vid-local').style.display=video?'block':'none';document.getElementById('vid-remote').style.display=video?'block':'none';document.getElementById('pip-audio').style.display=video?'none':'flex';document.getElementById('pip').classList.add('active');this.callSec=0;this.callTimer=setInterval(()=>{this.callSec++;document.getElementById('pip-timer').textContent=Utils.fmtTime(this.callSec)},1000)}};
+
+const Game={steps:[],stepIdx:0,magnetOn:false,magTimer:null,cap:C.CAP,initDist:0,lastLat:null,lastLon:null,sessSec:0,sessTimer:null,stepSnd:0,async hostStart(){try{const pos=await App.getPos();const dist=200+Math.floor(Math.random()*600);this._setQuest(pos.lat,pos.lon,dist);Net.send({t:'cfg',dist,pos:{lat:pos.lat,lon:pos.lon}});this._startSess();App.startGame(pos.lat,pos.lon)}catch{Toast.show('Не удалось получить геопозицию','i')}},guestStart(){if(!App.pDist)return;document.getElementById('lb-guest-wait').textContent='✅ Маршрут получен! Запуск...';setTimeout(async()=>{try{const pos=await App.getPos();this._setQuest(pos.lat,pos.lon,App.pDist);this._startSess();App.startGame(pos.lat,pos.lon)}catch{Toast.show('Не удалось получить геопозицию','i')}},600)},_randomTarget(lat,lon,dist){let tlat=lat,tlon=lon,tries=0;do{const a=Math.random()*Math.PI*2,r=dist/111000;tlat=lat+r*Math.cos(a);tlon=lon+r*Math.sin(a)/Math.cos(lat*Math.PI/180);tries++}while(!Zone.inside(tlat,tlon)&&tries<40);return{tlat,tlon}},_setQuest(lat,lon,dist){this.initDist=dist;const t=this._randomTarget(lat,lon,dist);MM.setTarget(t.tlat,t.tlon,'Ваша цель');MM.drawRoute(lat,lon,t.tlat,t.tlon);MM.spawnLoot(t.tlat,t.tlon)},soloQuest(){App.getPos().then(pos=>{const dist=200+Math.floor(Math.random()*600);this.initDist=dist;const t=this._randomTarget(pos.lat,pos.lon,dist);MM.setTarget(t.tlat,t.tlon,'Случайная точка');MM.drawRoute(pos.lat,pos.lon,t.tlat,t.tlon);MM.spawnLoot(t.tlat,t.tlon)}).catch(()=>Toast.show('Не удалось получить геопозицию','i'))},_startSess(){this.sessSec=0;clearInterval(this.sessTimer);this.sessTimer=setInterval(()=>{this.sessSec++;document.getElementById('nav-time').textContent=Utils.fmtTime(this.sessSec)},1000)},onPos(lat,lon,speed,acc){if(!MM.uMk)return;MM.uMk.setLatLng([lat,lon]);MM.addTrail(lat,lon);if(MM.autoCenter)MM.map.panTo([lat,lon],{animate:true,duration:.6});if(MM.autoRot&&this.lastLat!==null&&speed>0.5){const hdg=Utils.bearing(this.lastLat,this.lastLon,lat,lon);try{MM.map.setBearing(hdg)}catch{}}if(!Zone.inside(lat,lon)){UI.setInstr('Вы вне разрешённой зоны');document.getElementById('h-dist').textContent='--';document.getElementById('nav-speed').textContent=speed!=null?(speed*3.6).toFixed(1)+' км/ч':'--';document.getElementById('nav-kcal').textContent='0 ккал';return}if(this.lastLat!==null){const d=Utils.dist(this.lastLat,this.lastLon,lat,lon);if(d>1.5&&d<80){St.totalDist+=d;const now=Date.now();if(speed>0.8&&now-this.stepSnd>600){Aud.step();this.stepSnd=now}}}this.lastLat=lat;this.lastLon=lon;const steps=Math.floor(St.totalDist/C.STEP);const kcal=Math.floor(steps*C.CAL);document.getElementById('h-steps').textContent=steps;document.getElementById('nav-speed').textContent=speed!=null?(speed*3.6).toFixed(1)+' км/ч':'--';document.getElementById('nav-kcal').textContent=kcal+' ккал';const br=Utils.bearing(lat,lon,MM.tLat,MM.tLon);document.getElementById('compassArrow').style.transform=`rotate(${br-Compass.hdg}deg)`;const dist=Utils.dist(lat,lon,MM.tLat,MM.tLon);document.getElementById('h-dist').textContent=Utils.fmtDist(dist);if(this.initDist>0)UI.setProg((1-dist/this.initDist)*100);if(this.steps.length&&this.stepIdx<this.steps.length){const s=this.steps[this.stepIdx];if(Utils.dist(lat,lon,s.coord[0],s.coord[1])<25){const txt=`${s.txt}. До цели ${Utils.fmtDist(dist)}`;Voice.say(txt);UI.setInstr(s.txt);this.stepIdx++}}else{UI.setInstr(`До цели ${Utils.fmtDist(dist)}`)}if(dist<80&&dist>60)Utils.vib(30);else if(dist<40&&dist>20){Utils.vib([30,30]);Aud.near()}else if(dist<20)Utils.vib([50,50,50]);if(MM.lMk){const lp=MM.lMk.getLatLng();if(Utils.dist(lat,lon,lp.lat,lp.lng)<20)this.collectLoot()}Net.send({t:'pos',lat,lon});Weather.fetch(lat,lon);if(dist<this.cap){Utils.vib([80,120,80]);St.addXP(C.XP);St.addHistory({date:new Date().toLocaleString('ru'),dist:Math.round(this.initDist),steps,time:Utils.fmtTime(this.sessSec),kcal});Toast.show('🎉 Цель достигнута!','s');if(App.solo)setTimeout(()=>this.soloQuest(),800);else if(Net.isHost)this.hostStart();else App.getPos().then(pos=>this._setQuest(pos.lat,pos.lon,this.initDist)).catch(()=>Toast.show('Не удалось получить геопозицию','i'))}},skip(){if(St.skips<=0)return Toast.show('Нет пропусков!','i');St.skips--;if(App.solo)this.soloQuest();else if(Net.isHost)this.hostStart();else App.getPos().then(pos=>this._setQuest(pos.lat,pos.lon,this.initDist)).catch(()=>Toast.show('Не удалось получить геопозицию','i'));Toast.show('Пропуск','i');St.save()},magnet(){if(St.magnets<=0)return Toast.show('Нет магнитов!','i');if(this.magnetOn)return Toast.show('Уже активен','i');St.magnets--;this.magnetOn=true;this.cap=C.MCAP;document.getElementById('btn-mag').classList.add('on');Toast.show('🧲 Магнит ON!','s');clearTimeout(this.magTimer);this.magTimer=setTimeout(()=>{this.magnetOn=false;this.cap=C.CAP;document.getElementById('btn-mag').classList.remove('on')},C.MTIME);St.save()},collectLoot(){if(!MM.lMk)return;MM.map.removeLayer(MM.lMk);MM.lMk=null;Aud.loot();Utils.vib([40,80,40]);const rewards=[{k:'skips',n:'Пропуск'},{k:'magnets',n:'Магнит'},{k:'skips',n:'Пропуск'},{k:'xp',n:'+20 XP',bonus:true}];const r=rewards[Math.floor(Math.random()*rewards.length)];if(r.bonus)St.addXP(20);else St[r.k]++;St.lootCount++;Toast.show(`🎁 +1 ${r.n}`,'s');St.save()},leaderboard(){const bots=['xXWalkERXx','Speed_Boi','Гулитель_777','NavigatorPro','Кэт_В_Кроссках','ТопоГраф','Бродяга42','ШагоМер'];const today=new Date().toDateString();let scores=bots.map(n=>({name:n,xp:Utils.hash(n+today)%600,me:false}));scores.push({name:'⭐ '+App.nick,xp:St.xp,me:true});scores.sort((a,b)=>b.xp-a.xp);const myRank=scores.findIndex(s=>s.me)+1;document.getElementById('lb-list').innerHTML=`<div style="font-size:12px;color:#8892b0;text-align:center;margin-bottom:12px">Ваше место: #${myRank} из ${scores.length}</div>`+scores.map((s,i)=>{const medals=['🥇','🥈','🥉'];const med=i<3?medals[i]:i+1+'.';return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 8px;border-radius:12px;margin-bottom:4px;${s.me?'background:rgba(0,255,153,.08);color:var(--a);font-weight:800;':'border:1px solid rgba(255,255,255,.04);'}"><span>${med} ${s.name}</span><span>${s.xp} XP</span></div>`}).join('');UI.openModal('m-lb')},shareResult(){const t=`🚶 ${App.nick} прошёл ${Utils.fmtDist(St.totalDist)} в Walk Nav PRO! Уровень ${St.level}, ${St.xp} XP. Шагов сегодня: ${Math.floor(St.totalDist/C.STEP)}`;if(navigator.share)navigator.share({title:'Walk Nav PRO',text:t});else Toast.show('Скопируйте вручную','i')},showHistory(){const h=St.history;document.getElementById('history-list').innerHTML=h.length?h.map((e)=>`<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px"><div style="color:#8892b0;font-size:11px;margin-bottom:4px">${e.date}</div><div style="display:flex;gap:16px;flex-wrap:wrap"><span>📍 ${e.dist}м</span><span>👣 ${e.steps}</span><span>⏱ ${e.time}</span><span>🔥 ${e.kcal||0} ккал</span></div></div>`).join(''):'<div style="color:#667;text-align:center;padding:24px">История пуста. Начните прогулку!</div>';UI.openModal('m-history')},showStats(){const steps=Math.floor(St.totalDist/C.STEP);const kcal=Math.floor(steps*C.CAL);const html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${[['🚶 Всего пройдено',Utils.fmtDist(St.totalDist)],['👣 Шагов всего',steps.toLocaleString()],['🔥 Сожжено ккал',kcal],['🏆 Прогулок',St.totalWalks],['⭐ Уровень',St.level],['💎 XP',St.xp],['🧲 Магниты',St.magnets],['⏩ Пропуски',St.skips],['🎁 Лут собран',St.lootCount],['🏅 Достижений',St.achievements.length+'/'+C.ACHV.length]].map(([l,v])=>`<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:14px;text-align:center"><div style="font-size:13px;color:#8892b0;margin-bottom:4px">${l}</div><div style="font-size:20px;font-weight:800">${v}</div></div>`).join('')}</div>`;document.getElementById('stats-content').innerHTML=html;UI.openModal('m-stats')}};
+
+const App={apiKey:'',nick:'Игрок',solo:false,pDist:null,pPos:null,host(){this.solo=false;this._prep(true);UI.show('scr-conn');document.getElementById('conn-title').textContent='Создание комнаты';document.getElementById('conn-desc').textContent='Покажите QR другу';document.getElementById('c-host').style.display='flex';document.getElementById('c-guest').style.display='none';Net.makeOffer()},join(){this.solo=false;this._prep(false);UI.show('scr-conn');document.getElementById('conn-title').textContent='Присоединение';document.getElementById('conn-desc').textContent='Сканируйте QR хоста';document.getElementById('c-host').style.display='none';document.getElementById('c-guest').style.display='flex'},solo(){return this.offline()},offline(){this.solo=true;this.apiKey=document.getElementById('inp-key').value.trim();this.nick=document.getElementById('inp-nick').value.trim()||'Игрок';Utils.S.set('key',this.apiKey);Utils.S.set('nick',this.nick);Aud.init();Toast.show('🎮 Соло режим!','s');this.getPos().then(pos=>{this.startGame(pos.lat,pos.lon);Game.soloQuest();Game._startSess()}).catch(()=>Toast.show('Не удалось получить геопозицию','i'))},_prep(needKey){this.apiKey=document.getElementById('inp-key').value.trim();this.nick=document.getElementById('inp-nick').value.trim()||'Игрок';if(needKey&&!this.apiKey){alert('Введите API ключ!');throw new Error('no key')}Utils.S.set('key',this.apiKey);Utils.S.set('nick',this.nick);Aud.init()},getPos(){return new Promise((res,rej)=>{navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),rej,{enableHighAccuracy:true,timeout:15000})})},startGame(lat,lon){UI.show('game-ui');document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('game-ui').classList.add('active');MM.init(lat,lon);UI.updHUD();Compass.init();document.getElementById('nav-mode').textContent=this.solo?'Solo':'Multi';if(this.solo){document.getElementById('btn-code').style.display='none'}navigator.geolocation.watchPosition(p=>Game.onPos(p.coords.latitude,p.coords.longitude,p.coords.speed,p.coords.accuracy),e=>console.error('GPS',e),{enableHighAccuracy:true,maximumAge:3000,timeout:10000});setInterval(()=>St.save(),30000)}};
+
+window.onload=()=>{
+  const k=Utils.S.get('key',''),n=Utils.S.get('nick','');
+  if(k)document.getElementById('inp-key').value=k;
+  if(n)document.getElementById('inp-nick').value=n;
+};
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement.id==='chat-inp')Chat.send()});
+</script>
+</body>
+</html>
