@@ -1,6 +1,6 @@
 {
   "name": "noir-browser",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Noir Browser — минималистичный чёрный браузер на Electron с блокировщиком рекламы (Ghostery/uBlock-совместимый) и встроенным бесплатным ИИ-агентом",
   "main": "dist/main/main.js",
   "author": "BalaRmack",
@@ -41,7 +41,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName} Setup ${version}.${ext}"
@@ -53,7 +55,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Noir Browser",
-      "installerLanguages": ["ru_RU", "en_US"]
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ]
     },
     "publish": {
       "provider": "github",
