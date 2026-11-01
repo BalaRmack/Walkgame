@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Walk — навигатор прогулок</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#0a0b0d;
+    --surface:#14171b;
+    --surface-2:#1b1f24;
+    --line:#282e35;
+    --ink:#f1f3f5;
+    --dim:#98a2ac;
+    --faint:#6b757f;
+    --accent:#d7f65a;
+    --accent-ink:#12150a;
+    --danger:#ff6a5e;
+    --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --r:14px;
+    --r-lg:20px;
+    --shadow:0 18px 44px -22px rgba(0,0,0,.9);
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  [hidden],.hidden{display:none!important}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--font);
+    font-size:15px;line-height:1.45;overflow:hidden;overscroll-behavior:none;
+    -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+  input{font:inherit}
+  svg{display:block}
+
+  /* ---------- map ---------- */
+  #map{position:absolute;inset:0;z-index:0;background:#0d0f12}
+  .leaflet-container{background:#0d0f12;font-family:var(--font)}
+  .leaflet-control-attribution{
+    background:rgba(12,14,17,.72)!important;color:#7c858e!important;
+    font-size:10px!important;padding:2px 6px!important;border-radius:6px 0 0 0;
+    backdrop-filter:blur(6px)
+  }
+  .leaflet-control-attribution a{color:#98a2ac!important}
+  @media (max-width:759px){
+    .leaflet-bottom{bottom:calc(min(300px,48vh) + env(safe-area-inset-bottom))}
+  }
+  .mk-me i{
+    display:block;width:20px;height:20px;border-radius:50%;background:var(--accent);
+    border:3px solid #0b0c0e;box-shadow:0 0 0 1px rgba(215,246,90,.45),0 3px 10px rgba(0,0,0,.6)
+  }
+  .mk-target i{
+    display:block;width:20px;height:20px;border-radius:50%;
+    border:2px solid #f1f3f5;background:rgba(241,243,245,.16);
+    box-shadow:0 0 0 7px rgba(241,243,245,.07)
+  }
+
+  /* ---------- setup ---------- */
+  .screen{
+    position:absolute;inset:0;z-index:40;display:none;place-items:center;
+    padding:24px 20px;background:var(--bg);overflow-y:auto
+  }
+  .screen.on{display:grid}
+  .setup{width:100%;max-width:400px}
+  .wordmark{font-size:30px;font-weight:650;letter-spacing:-.045em;line-height:1}
+  .wordmark i{font-style:normal;color:var(--accent)}
+  .tagline{color:var(--dim);font-size:14px;margin:10px 0 22px;max-width:32ch}
+  .panel{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+    padding:18px;display:flex;flex-direction:column;gap:16px
+  }
+  .field>span.lbl{
+    display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--faint);font-weight:600;margin-bottom:8px
+  }
+  input[type=text]{
+    width:100%;height:46px;border-radius:12px;background:var(--surface-2);
+    border:1px solid var(--line);color:var(--ink);padding:0 14px;font-size:15px;outline:none;
+    transition:border-color .15s
+  }
+  input[type=text]::placeholder{color:var(--faint)}
+  input[type=text]:focus{border-color:rgba(215,246,90,.55)}
+  .seg{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:4px;
+    background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px
+  }
+  .seg button{
+    height:34px;border-radius:9px;font-size:12.5px;font-weight:550;
+    color:var(--dim);text-align:center;transition:background .15s,color .15s
+  }
+  .seg button.on{background:var(--accent);color:var(--accent-ink)}
+  .switch{display:flex;align-items:center;gap:10px;cursor:pointer;position:relative}
+  .switch input{position:absolute;opacity:0;pointer-events:none}
+  .switch .track{
+    width:40px;height:24px;border-radius:999px;background:var(--surface-2);
+    border:1px solid var(--line);position:relative;flex:none;transition:background .18s,border-color .18s
+  }
+  .switch .track::after{
+    content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+    background:var(--dim);transition:transform .18s,background .18s
+  }
+  .switch input:checked+.track{background:var(--accent);border-color:var(--accent)}
+  .switch input:checked+.track::after{transform:translateX(16px);background:var(--accent-ink)}
+  .switch .txt{font-size:13.5px;color:var(--dim);line-height:1.3}
+  .btn{
+    width:100%;height:50px;border-radius:var(--r);font-size:15px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    transition:transform .12s,opacity .15s
+  }
+  .btn:active{transform:scale(.985)}
+  .btn-primary{background:var(--accent);color:var(--accent-ink)}
+  .btn-ghost{background:var(--surface-2);border:1px solid var(--line);color:var(--ink)}
+  .hint{font-size:12px;color:var(--faint);line-height:1.45}
+  .mini{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    margin-top:16px;font-size:13px;color:var(--faint)
+  }
+  .mini button{color:var(--dim);font-size:13px;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+  .mini button:hover{color:var(--ink)}
+
+  /* ---------- game hud ---------- */
+  #hud{position:absolute;inset:0;z-index:10;display:none;pointer-events:none}
+  #hud.on{display:block}
+  .topbar{pointer-events:none}
+  .pill,.hud-card{pointer-events:auto}
+
+  .topbar{
+    position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    gap:8px;padding:calc(10px + env(safe-area-inset-top)) 10px 0
+  }
+  .pill{
+    display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;
+    border-radius:999px;background:rgba(14,17,20,.82);border:1px solid var(--line);
+    backdrop-filter:blur(14px);font-size:12.5px;color:var(--dim);white-space:nowrap
+  }
+  .pill b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+
+  .hud-card{
+    position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));
+    background:rgba(17,20,24,.94);border:1px solid var(--line);border-radius:22px;
+    backdrop-filter:blur(20px);box-shadow:var(--shadow);padding:16px 16px 14px
+  }
+  .dist-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .dist-num{
+    font-size:36px;font-weight:600;letter-spacing:-.035em;line-height:1;
+    font-variant-numeric:tabular-nums
+  }
+  .dist-sub{font-size:12.5px;color:var(--dim);margin-top:7px;display:flex;gap:6px;align-items:center}
+  .dist-sub svg{width:13px;height:13px;color:var(--faint);flex:none}
+
+  .compass{width:54px;height:54px;flex:none;position:relative;display:grid;place-items:center}
+  .compass .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .compass .needle{
+    position:absolute;inset:0;display:grid;place-items:center;
+    transition:transform .35s cubic-bezier(.3,.9,.3,1)
+  }
+  .compass .needle svg{width:20px;height:26px}
+  .compass .n{
+    position:absolute;top:3px;left:50%;transform:translateX(-50%);
+    font-size:8px;font-weight:700;letter-spacing:.06em;color:var(--faint)
+  }
+
+  .prog{height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden;margin:15px 0 13px}
+  .prog i{display:block;height:100%;width:0;background:var(--accent);border-radius:2px;transition:width .45s ease}
+  .prog-row{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin:-8px 0 12px}
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px}
+  .metric span{
+    display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--faint);font-weight:600;margin-bottom:3px
+  }
+  .metric b{font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+  .controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ctl{
+    height:54px;border-radius:16px;background:var(--surface-2);border:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    font-size:10.5px;font-weight:550;color:var(--dim);
+    transition:background .15s,color .15s,border-color .15s
+  }
+  .ctl svg{width:18px;height:18px}
+  .ctl:active{background:var(--line)}
+  .ctl.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+
+  .note{
+    display:flex;gap:8px;align-items:flex-start;font-size:11.5px;line-height:1.35;
+    color:#cfe085;background:rgba(215,246,90,.06);border:1px solid rgba(215,246,90,.18);
+    border-radius:12px;padding:8px 10px;margin-bottom:12px
+  }
+  .note svg{width:14px;height:14px;flex:none;margin-top:1px}
+
+  /* ---------- sheet ---------- */
+  .scrim{
+    position:absolute;inset:0;z-index:60;background:rgba(4,5,7,.55);
+    opacity:0;pointer-events:none;transition:opacity .22s
+  }
+  .scrim.on{opacity:1;pointer-events:auto}
+  .sheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:70;background:var(--surface);
+    border-top:1px solid var(--line);border-radius:22px 22px 0 0;
+    padding:8px 10px calc(12px + env(safe-area-inset-bottom));
+    transform:translateY(102%);transition:transform .28s cubic-bezier(.32,.72,0,1);
+    max-height:86vh;overflow-y:auto
+  }
+  .sheet.on{transform:translateY(0)}
+  .grip{width:36px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 10px}
+  .row{
+    display:flex;align-items:center;gap:12px;width:100%;padding:13px 10px;
+    border-radius:12px;font-size:15px
+  }
+  .row:active{background:var(--surface-2)}
+  .row svg{width:19px;height:19px;color:var(--dim);flex:none}
+  .row .meta{margin-left:auto;font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .row.danger{color:var(--danger)}
+  .row.danger svg{color:var(--danger)}
+  .sheet-sep{height:1px;background:var(--line);margin:6px 10px}
+  .sheet-group{padding:10px 10px 4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);font-weight:600}
+
+  /* ---------- modal ---------- */
+  .modal{
+    position:absolute;inset:0;z-index:80;display:none;align-items:flex-end;justify-content:center;
+    padding:10px;background:rgba(4,5,7,.6)
+  }
+  .modal.on{display:flex}
+  .modal-card{
+    width:100%;max-width:440px;background:var(--surface);border:1px solid var(--line);
+    border-radius:22px;padding:20px;max-height:84vh;overflow-y:auto;
+    animation:pop .24s cubic-bezier(.3,.9,.3,1)
+  }
+  @keyframes pop{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .eyebrow{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--faint);font-weight:600;margin-bottom:6px
+  }
+  .modal-card h2{font-size:22px;font-weight:650;letter-spacing:-.025em;line-height:1.2}
+  .modal-head{margin-bottom:18px}
+  .result-grid,.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}
+  .result-grid div,.stat-grid div{
+    background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:12px
+  }
+  .result-grid span,.stat-grid span{
+    display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--faint);font-weight:600;margin-bottom:4px
+  }
+  .result-grid b,.stat-grid b{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+  .modal-actions{display:flex;flex-direction:column;gap:8px}
+  .list-row{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:12px 0;border-bottom:1px solid var(--line)
+  }
+  .list-row:last-child{border-bottom:0}
+  .list-row b{font-weight:600;font-variant-numeric:tabular-nums}
+  .list-row span{display:block;font-size:11.5px;color:var(--faint);margin-top:2px}
+  .lr-meta{font-size:11.5px;color:var(--dim);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .muted{color:var(--dim);font-size:13.5px;margin-bottom:18px}
+
+  /* ---------- toast ---------- */
+  #toast{
+    position:absolute;left:50%;bottom:calc(210px + env(safe-area-inset-bottom));z-index:90;
+    transform:translate(-50%,10px);background:rgba(24,28,33,.98);border:1px solid var(--line);
+    color:var(--ink);font-size:13px;font-weight:500;padding:10px 16px;border-radius:999px;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:80vw;text-align:center;
+    box-shadow:var(--shadow)
+  }
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+
+  @media (max-width:400px){
+    .dist-num{font-size:32px}
+    .metric b{font-size:13px}
+    .ctl{height:50px;font-size:10px}
+  }
+  @media (min-width:760px){
+    .hud-card{left:auto;right:20px;bottom:20px;width:400px}
+    .topbar{padding:16px 20px 0}
+    .modal{align-items:center}
+    #toast{bottom:200px}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- ================= SETUP ================= -->
+<section class="screen on" id="scr-setup">
+  <div class="setup">
+    <div class="wordmark">walk<i>.</i></div>
+    <p class="tagline">Случайная точка на карте, пеший маршрут до неё и немного опыта за каждый шаг.</p>
+
+    <div class="panel">
+      <label class="field">
+        <span class="lbl">Имя</span>
+        <input id="inp-name" type="text" maxlength="16" placeholder="Игрок" autocomplete="off" autocapitalize="words">
+      </label>
+
+      <div class="field">
+        <span class="lbl">Дистанция цели</span>
+        <div class="seg" id="seg-dist">
+          <button type="button" data-d="400" class="on">400 м</button>
+          <button type="button" data-d="900">900 м</button>
+          <button type="button" data-d="1600">1,6 км</button>
+          <button type="button" data-d="0">Любая</button>
+        </div>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="chk-demo">
+        <span class="track"></span>
+        <span class="txt">Демо-режим — без GPS, точка идёт по маршруту сама</span>
+      </label>
+
+      <button class="btn btn-primary" data-act="start">Начать прогулку</button>
+      <p class="hint" id="geo-hint">Для навигации нужен доступ к геолокации. Без него включится демо-режим.</p>
+    </div>
+
+    <div class="mini">
+      <button data-act="history">История</button>
+      <span>·</span>
+      <button data-act="stats">Статистика</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= GAME ================= -->
+<div id="hud">
+  <div class="topbar">
+    <div class="pill"><span class="dot"></span><span>ур.</span><b id="st-lvl">1</b><b id="st-xp">0 XP</b></div>
+    <div class="pill hidden" id="pill-weather"></div>
+  </div>
+
+  <div class="hud-card">
+    <div class="note hidden" id="demo-note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+      <span>Демо-режим: GPS недоступен, точка движется по маршруту со скоростью 15 м/с.</span>
+    </div>
+
+    <div class="dist-row">
+      <div>
+        <div class="dist-num" id="st-dist">—</div>
+        <div class="dist-sub">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <span>до цели <span id="st-dir">—</span></span>
+        </div>
+      </div>
+      <div class="compass" aria-hidden="true">
+        <span class="ring"></span>
+        <span class="n">С</span>
+        <span class="needle" id="needle">
+          <svg viewBox="0 0 20 26"><path d="M10 1 17 14 10 11.5 3 14Z" fill="#d7f65a"/><path d="M10 25 3 14l7 2.5 7-2.5Z" fill="#3a424a"/></svg>
+        </span>
+      </div>
+    </div>
+
+    <div class="prog"><i id="prog"></i></div>
+    <div class="prog-row"><span>маршрут</span><span id="prog-pct">0%</span></div>
+
+    <div class="metrics">
+      <div class="metric"><span>Пройдено</span><b id="m-walk">0 м</b></div>
+      <div class="metric"><span>Шаги</span><b id="m-steps">0</b></div>
+      <div class="metric"><span>Время</span><b id="m-time">00:00</b></div>
+      <div class="metric"><span>Темп</span><b id="m-pace">—</b></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctl on" data-act="center" id="btn-center">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3" stroke-linecap="round"/></svg>
+        Центр
+      </button>
+      <button class="ctl" data-act="layers" id="btn-layers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+        Слои
+      </button>
+      <button class="ctl" data-act="newquest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        Другая
+      </button>
+      <button class="ctl" data-act="menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        Меню
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= OVERLAYS ================= -->
+<div class="scrim" id="scrim" data-act="close-sheet"></div>
+
+<div class="sheet" id="sheet" role="dialog" aria-label="Меню">
+  <div class="grip"></div>
+  <div class="sheet-group">Прогулка</div>
+  <button class="row" data-act="newquest">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+    Новая цель
+  </button>
+  <button class="row" data-act="layers">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+    Слой карты
+    <span class="meta" id="meta-layer">схема</span>
+  </button>
+  <button class="row" data-act="history">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    История
+  </button>
+  <button class="row" data-act="stats">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
+    Статистика
+  </button>
+  <div class="sheet-sep"></div>
+  <button class="row danger" data-act="finish">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+    Завершить прогулку
+  </button>
+  <button class="row" data-act="close-sheet">Отмена</button>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true">
+  <div class="modal-card" id="modal-body"></div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+
+  /* ---------------- constants ---------------- */
+  var DEFAULT_CENTER = { lat: 56.0106, lng: 92.8526 }; // Красноярск
+  var STEP_M = 0.72;          // средняя длина шага, м
+  var ARRIVE_M = 18;          // радиус прибытия, м
+  var XP_PER_M = 0.2;         // опыт за метр
+  var XP_ARRIVE = 60;         // бонус за достигнутую цель
+  var LVL_XP = 500;           // опыт на уровень
+  var DEMO_SPEED = 15;        // м/с в демо-режиме
+  var OS = ['север', 'северо-восток', 'восток', 'юго-восток', 'юг', 'юго-запад', 'запад', 'северо-запад'];
+  var WMO = {
+    0: 'ясно', 1: 'почти ясно', 2: 'переменная облачность', 3: 'пасмурно',
+    45: 'туман', 48: 'изморозь', 51: 'морось', 53: 'морось', 55: 'морось',
+    61: 'дождь', 63: 'дождь', 65: 'сильный дождь', 66: 'ледяной дождь', 67: 'ледяной дождь',
+    71: 'снег', 73: 'снег', 75: 'сильный снег', 77: 'снежная крупа',
+    80: 'ливень', 81: 'ливень', 82: 'сильный ливень', 85: 'снегопад', 86: 'снегопад',
+    95: 'гроза', 96: 'гроза', 99: 'гроза'
+  };
+
+  /* ---------------- storage ---------------- */
+  var store = {
+    key: 'walk.v2',
+    d: { name: '', xp: 0, dist: 0, walks: 0, history: [], prefs: { layer: 'dark', demo: false } },
+    load: function () {
+      try {
+        var raw = localStorage.getItem(this.key);
+        if (!raw) return;
+        var j = JSON.parse(raw);
+        this.d.xp = +j.xp || 0;
+        this.d.dist = +j.dist || 0;
+        this.d.walks = +j.walks || 0;
+        this.d.name = typeof j.name === 'string' ? j.name : '';
+        this.d.history = Array.isArray(j.history) ? j.history : [];
+        this.d.prefs = Object.assign(this.d.prefs, j.prefs || {});
+      } catch (e) { /* приватный режим — просто живём без сохранения */ }
+    },
+    save: function () {
+      try { localStorage.setItem(this.key, JSON.stringify(this.d)); } catch (e) {}
+    }
+  };
+
+  /* ---------------- geo helpers ---------------- */
+  var Geo = {
+    rad: function (d) { return d * Math.PI / 180; },
+    deg: function (r) { return r * 180 / Math.PI; },
+    dist: function (a, b) {
+      var R = 6371000;
+      var dLat = this.rad(b.lat - a.lat), dLng = this.rad(b.lng - a.lng);
+      var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(this.rad(a.lat)) * Math.cos(this.rad(b.lat)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    },
+    bearing: function (a, b) {
+      var y = Math.sin(this.rad(b.lng - a.lng)) * Math.cos(this.rad(b.lat));
+      var x = Math.cos(this.rad(a.lat)) * Math.sin(this.rad(b.lat)) -
+        Math.sin(this.rad(a.lat)) * Math.cos(this.rad(b.lat)) * Math.cos(this.rad(b.lng - a.lng));
+      return (this.deg(Math.atan2(y, x)) + 360) % 360;
+    },
+    offset: function (a, meters, brg) {
+      var R = 6371000, d = meters / R, t = this.rad(brg), la = this.rad(a.lat), lo = this.rad(a.lng);
+      var lat2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(t));
+      var lng2 = lo + Math.atan2(Math.sin(t) * Math.sin(d) * Math.cos(la),
+        Math.cos(d) - Math.sin(la) * Math.sin(lat2));
+      return { lat: this.deg(lat2), lng: ((this.deg(lng2) + 540) % 360) - 180 };
+    }
+  };
+
+  /* ---------------- formatting ---------------- */
+  var Fmt = {
+    dist: function (m) {
+      if (m == null || !isFinite(m)) return '—';
+      if (m >= 1000) {
+        var km = m / 1000;
+        if (km < 10) return km.toFixed(1).replace('.', ',') + ' км';
+        return Fmt.num(km) + ' км';
+      }
+      return Math.round(m) + ' м';
+    },
+    num: function (n) { try { return Math.round(n).toLocaleString('ru-RU'); } catch (e) { return String(Math.round(n)); } },
+    time: function (sec) {
+      sec = Math.max(0, Math.floor(sec || 0));
+      var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+      var p = function (v) { return String(v).padStart(2, '0'); };
+      return h ? h + ':' + p(m) + ':' + p(s) : p(m) + ':' + p(s);
+    },
+    pace: function (sec, meters) {
+      if (meters < 30 || !sec) return '—';
+      var perKm = sec / (meters / 1000);
+      var m = Math.floor(perKm / 60), s = Math.round(perKm % 60);
+      if (m > 99) return '—';
+      return m + ':' + String(s).padStart(2, '0') + ' /км';
+    }
+  };
+
+  function dirText(brg) {
+    return 'на ' + OS[Math.round(((brg % 360) + 360) % 360 / 45) % 8];
+  }
+
+  /* ---------------- toast / overlays ---------------- */
+  var toastTimer;
+  function toast(msg) {
+    var el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2300);
+  }
+  function openSheet() { $('#scrim').classList.add('on'); $('#sheet').classList.add('on'); }
+  function closeSheet() { $('#scrim').classList.remove('on'); $('#sheet').classList.remove('on'); }
+  function openModal(html) { $('#modal-body').innerHTML = html; $('#modal').classList.add('on'); }
+  function closeModal() { $('#modal').classList.remove('on'); }
+
+  /* ---------------- map ---------------- */
+  var MapCtl = {
+    map: null, me: null, target: null, route: null, trail: null, trailPts: [],
+    layers: {}, layer: 'dark', follow: true,
+
+    init: function (center) {
+      if (this.map) return;
+      this.map = L.map('map', {
+        zoomControl: false, attributionControl: true, maxZoom: 19,
+        zoomSnap: 0.5, fadeAnimation: true
+      }).setView([center.lat, center.lng], 15);
+      this.map.attributionControl.setPrefix(false);
+
+      var o = { maxZoom: 19, detectRetina: true };
+      this.layers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        Object.assign({ attribution: '© OpenStreetMap, © CARTO' }, o));
+      this.layers.sat = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        Object.assign({ attribution: '© Esri, Maxar' }, o));
+      this.layers.dark.addTo(this.map);
+
+      this.trail = L.polyline([], { color: '#d7f65a', weight: 3, opacity: 0.45, lineCap: 'round' }).addTo(this.map);
+      this.route = L.polyline([], { color: '#d7f65a', weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(this.map);
+
+      var self = this;
+      this.map.on('dragstart', function () { self.setFollow(false); });
+    },
+
+    setLayer: function (name) {
+      if (!this.map || !this.layers[name]) return;
+      if (this.layer === name && this.map.hasLayer(this.layers[name])) return;
+      if (this.layers[this.layer]) this.map.removeLayer(this.layers[this.layer]);
+      this.layers[name].addTo(this.map);
+      this.layer = name;
+      store.d.prefs.layer = name;
+      store.save();
+      $('#meta-layer').textContent = name === 'sat' ? 'спутник' : 'схема';
+      $('#btn-layers').classList.toggle('on', name === 'sat');
+    },
+
+    setFollow: function (on) {
+      this.follow = on;
+      $('#btn-center').classList.toggle('on', on);
+    },
+
+    center: function () {
+      if (!this.map || !this.me) return;
+      this.setFollow(true);
+      this.map.panTo(this.me.getLatLng(), { animate: true, duration: 0.5 });
+    },
+
+    setMe: function (pos) {
+      if (!this.map) return;
+      if (!this.me) {
+        this.me = L.marker([pos.lat, pos.lng], {
+          icon: L.divIcon({ className: 'mk-me', iconSize: [20, 20], iconAnchor: [10, 10], html: '<i></i>' }),
+          interactive: false, zIndexOffset: 600
+        }).addTo(this.map);
+      } else {
+        this.me.setLatLng([pos.lat, pos.lng]);
+      }
+      if (this.follow && !this.map.getBounds().pad(-0.3).contains([pos.lat, pos.lng])) {
+        this.map.panTo([pos.lat, pos.lng], { animate: true, duration: 0.5 });
+      }
+    },
+
+    pushTrail: function (pos) {
+      this.trailPts.push([pos.lat, pos.lng]);
+      if (this.trailPts.length > 3000) this.trailPts.shift();
+      this.trail.setLatLngs(this.trailPts);
+    },
+
+    clearTrail: function () {
+      this.trailPts = [];
+      if (this.trail) this.trail.setLatLngs([]);
+    },
+
+    setTarget: function (pos) {
+      if (!this.map) return;
+      if (this.target) this.map.removeLayer(this.target);
+      this.target = L.marker([pos.lat, pos.lng], {
+        icon: L.divIcon({ className: 'mk-target', iconSize: [20, 20], iconAnchor: [10, 10], html: '<i></i>' }),
+        interactive: false
+      }).addTo(this.map);
+    },
+
+    setRoute: function (coords) {
+      if (!this.route) return;
+      this.route.setLatLngs((coords || []).map(function (c) { return [c.lat, c.lng]; }));
+    },
+
+    fit: function (a, b) {
+      if (!this.map) return;
+      this.map.fitBounds(L.latLngBounds([[a.lat, a.lng], [b.lat, b.lng]]), {
+        paddingTopLeft: [46, 90], paddingBottomRight: [46, 330], maxZoom: 17, animate: false
+      });
+    },
+
+    invalidate: function () { if (this.map) this.map.invalidateSize(); }
+  };
+
+  /* ---------------- routing ---------------- */
+  var FOOT_ROUTERS = [
+    'https://routing.openstreetmap.de/routed-foot/route/v1/foot/',
+    'https://router.project-osrm.org/route/v1/driving/'
+  ];
+
+  function routeFrom(base, a, b) {
+    var url = base + a.lng.toFixed(6) + ',' + a.lat.toFixed(6) + ';' +
+      b.lng.toFixed(6) + ',' + b.lat.toFixed(6) + '?overview=full&geometries=geojson';
+    var opts = {};
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) opts.signal = AbortSignal.timeout(8000);
+    return fetch(url, opts)
+      .then(function (r) {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        var c = j && j.routes && j.routes[0] && j.routes[0].geometry && j.routes[0].geometry.coordinates;
+        if (!c || c.length < 2) throw new Error('no geometry');
+        return c.map(function (p) { return { lat: p[1], lng: p[0] }; });
+      });
+  }
+
+  // пеший роутер, если недоступен — автомобильный, если и он нет — прямая линия
+  function fetchRoute(a, b) {
+    return routeFrom(FOOT_ROUTERS[0], a, b)
+      .catch(function () { return routeFrom(FOOT_ROUTERS[1], a, b); })
+      .catch(function () { return null; });
+  }
+
+  /* ---------------- demo walker ---------------- */
+  var Demo = {
+    seg: 0, off: 0, timer: null,
+
+    load: function (coords) { this.seg = 0; this.off = 0; this.coords = coords; },
+
+    start: function () {
+      var self = this;
+      this.stop();
+      this.timer = setInterval(function () { self.step(0.15); }, 150);
+    },
+
+    stop: function () {
+      clearInterval(this.timer);
+      this.timer = null;
+    },
+
+    step: function (dt) {
+      var c = Game.coords;
+      if (!c || c.length < 2) return;
+      var budget = DEMO_SPEED * dt;
+
+      while (budget > 0 && this.seg < c.length - 1) {
+        var len = Math.max(Geo.dist(c[this.seg], c[this.seg + 1]), 0.05);
+        var remain = len - this.off;
+        if (budget < remain) { this.off += budget; budget = 0; }
+        else { budget -= remain; this.seg += 1; this.off = 0; }
+      }
+
+      if (this.seg >= c.length - 1) {
+        Game.onPos(c[c.length - 1], 4);
+        this.stop();
+        return;
+      }
+      var a = c[this.seg], b = c[this.seg + 1];
+      var segLen = Math.max(Geo.dist(a, b), 0.05);
+      var t = Math.min(1, this.off / segLen);
+      Game.onPos({ lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t }, 4);
+    }
+  };
+
+  /* ---------------- game ---------------- */
+  var Game = {
+    running: false, demo: false, pos: null, target: null, coords: [],
+    targetDist: 0, walked: 0, elapsed: 0, startAt: 0,
+    travelHeading: null, deviceHeading: null,
+    watchId: null, clock: null, saveTimer: null, busy: false,
+
+    start: function () {
+      var name = ($('#inp-name').value || '').trim().slice(0, 16) || 'Игрок';
+      store.d.name = name;
+      var wantDemo = $('#chk-demo').checked;
+      store.d.prefs.demo = wantDemo;
+      store.save();
+
+      $('#scr-setup').classList.remove('on');
+      $('#hud').classList.add('on');
+      MapCtl.init(DEFAULT_CENTER);
+      MapCtl.setLayer(store.d.prefs.layer || 'dark');
+      MapCtl.invalidate();
+      MapCtl.clearTrail();
+
+      this.running = true;
+      this.demo = false;
+      this.pos = null;
+      this.target = null;
+      this.walked = 0;
+      this.arrived = false;
+      $('#demo-note').classList.add('hidden');
+      this.startClock();
+
+      var self = this;
+      if (wantDemo) {
+        this.enableDemo(true);
+        return;
+      }
+
+      // если браузер вообще не ответит (частая история в iframe) — уходим в демо
+      clearTimeout(this.geoWait);
+      this.geoWait = setTimeout(function () {
+        if (!self.pos && !self.demo) {
+          self.enableDemo(true);
+          toast('Нет ответа от GPS — включён демо-режим');
+        }
+      }, 13000);
+
+      navigator.geolocation.getCurrentPosition(function (p) {
+        clearTimeout(self.geoWait);
+        if (self.demo || !self.running) return;
+        self.onPos({ lat: p.coords.latitude, lng: p.coords.longitude }, p.coords.accuracy || 0);
+        self.startWatch();
+        self.newQuest(self.pos);
+      }, function () {
+        clearTimeout(self.geoWait);
+        if (!self.running) return;
+        self.enableDemo(true);
+        toast('GPS недоступен — включён демо-режим');
+      }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+    },
+
+    startWatch: function () {
+      var self = this;
+      if (!navigator.geolocation || this.watchId != null) return;
+      this.watchId = navigator.geolocation.watchPosition(function (p) {
+        self.onPos({ lat: p.coords.latitude, lng: p.coords.longitude }, p.coords.accuracy || 0);
+      }, function () {
+        if (!self.demo) {
+          self.enableDemo(false);
+          toast('GPS потерян — включён демо-режим');
+        }
+      }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+    },
+
+    stopWatch: function () {
+      if (this.watchId != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(this.watchId);
+      }
+      this.watchId = null;
+    },
+
+    enableDemo: function (freshStart) {
+      this.demo = true;
+      clearTimeout(this.geoWait);
+      this.stopWatch();
+      Demo.stop();
+      $('#demo-note').classList.remove('hidden');
+      var base = this.pos || DEFAULT_CENTER;
+      if (freshStart || !this.pos) {
+        base = Geo.offset(DEFAULT_CENTER, 120 + Math.random() * 300, Math.random() * 360);
+        this.pos = null;
+        this.onPos(base, 4);
+      }
+      this.newQuest(this.pos);
+    },
+
+    startClock: function () {
+      var self = this;
+      if (this.clock) return;
+      this.clock = setInterval(function () {
+        if (!self.running) return;
+        self.elapsed = (Date.now() - self.startAt) / 1000;
+        updateHud();
+      }, 1000);
+      this.startAt = Date.now();
+      this.elapsed = 0;
+    },
+
+    newQuest: function (from) {
+      if (!from || !this.running) return;
+      var meters = parseInt($('#seg-dist .on').getAttribute('data-d'), 10) || 0;
+      if (!meters) meters = 350 + Math.round(Math.random() * 1150);
+
+      var target = Geo.offset(from, meters, Math.random() * 360);
+      this.target = target;
+      this.targetDist = Geo.dist(from, target);
+      this.walked = 0;
+      this.arrived = false;
+      this.startAt = Date.now();
+      this.elapsed = 0;
+
+      MapCtl.clearTrail();
+      MapCtl.setTarget(target);
+      MapCtl.setRoute([from, target]);
+      MapCtl.fit(from, target);
+      MapCtl.setFollow(true);
+
+      var self = this;
+      fetchRoute(from, target).then(function (coords) {
+        if (!self.running || self.target !== target) return;
+        self.coords = coords || [from, target];
+        MapCtl.setRoute(self.coords);
+        if (self.demo) {
+          Demo.load(self.coords);
+          Demo.start();
+        }
+        updateHud();
+      });
+
+      Weather.update(from);
+      updateHud();
+    },
+
+    onPos: function (pos, acc) {
+      if (!this.running) return;
+      var prev = this.pos;
+      this.pos = pos;
+      MapCtl.setMe(pos);
+
+      if (prev) {
+        var d = Geo.dist(prev, pos);
+        if (d > 1 && d < 70 && (acc || 0) < 60) {
+          this.walked += d;
+          store.d.dist += d;
+          this.travelHeading = Geo.bearing(prev, pos);
+          MapCtl.pushTrail(pos);
+          this.debouncedSave();
+        }
+      } else {
+        MapCtl.pushTrail(pos);
+      }
+
+      updateHud();
+
+      if (this.target && !this.arrived && Geo.dist(pos, this.target) <= ARRIVE_M) {
+        this.arrived = true;
+        finish(true);
+      }
+    },
+
+    debouncedSave: function () {
+      var self = this;
+      if (this.saveTimer) return;
+      this.saveTimer = setTimeout(function () { self.saveTimer = null; store.save(); }, 3000);
+    },
+
+    resume: function () {
+      this.running = true;
+      this.startClock();
+      if (this.demo) {
+        if (this.pos) {
+          this.newQuest(this.pos);
+        } else {
+          this.enableDemo(true);
+        }
+      } else {
+        this.startWatch();
+        if (this.pos) this.newQuest(this.pos);
+      }
+    },
+
+    stop: function () {
+      this.running = false;
+      clearTimeout(this.geoWait);
+      this.stopWatch();
+      Demo.stop();
+      clearInterval(this.clock);
+      this.clock = null;
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+      store.save();
+    },
+
+    toggleLayer: function () {
+      MapCtl.setLayer(MapCtl.layer === 'sat' ? 'dark' : 'sat');
+      toast(MapCtl.layer === 'sat' ? 'Спутник' : 'Схема');
+    },
+
+    askNewQuest: function () {
+      if (this.busy) return;
+      if (!this.running) { closeSheet(); return; }
+      if (!this.pos) { toast('Ждём позицию…'); return; }
+      this.busy = true;
+      closeSheet();
+      if (this.demo) Demo.stop();
+      this.newQuest(this.pos);
+      var self = this;
+      setTimeout(function () { self.busy = false; }, 800);
+    }
+  };
+
+  /* ---------------- weather ---------------- */
+  var Weather = {
+    last: 0,
+
+    update: function (pos) {
+      var now = Date.now();
+      if (now - this.last < 10 * 60 * 1000) return;
+      this.last = now;
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=' + pos.lat.toFixed(3) +
+        '&longitude=' + pos.lng.toFixed(3) + '&current=temperature_2m,weather_code')
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var c = j && j.current;
+          if (!c || c.temperature_2m == null) return;
+          var t = Math.round(c.temperature_2m);
+          var desc = WMO[c.weather_code] || '';
+          var el = $('#pill-weather');
+          el.classList.remove('hidden');
+          el.innerHTML = '<b>' + (t > 0 ? '+' : '') + t + '°</b><span>' + desc + '</span>';
+        })
+        .catch(function () {});
+    }
+  };
+
+  /* ---------------- hud ---------------- */
+  function updateHud() {
+    var pos = Game.pos, target = Game.target;
+    var d = (pos && target) ? Geo.dist(pos, target) : null;
+
+    $('#st-dist').textContent = d == null ? '—' : Fmt.dist(d);
+    $('#st-dir').textContent = d == null ? '—' : dirText(Geo.bearing(pos, target));
+
+    var pct = 0;
+    if (d != null && Game.targetDist > 0) {
+      pct = Math.max(0, Math.min(100, (1 - d / Game.targetDist) * 100));
+    }
+    $('#prog').style.width = pct.toFixed(1) + '%';
+    $('#prog-pct').textContent = Math.round(pct) + '%';
+
+    var heading = Game.deviceHeading != null ? Game.deviceHeading : (Game.travelHeading || 0);
+    if (d != null) {
+      var rot = (Geo.bearing(pos, target) - heading + 360) % 360;
+      $('#needle').style.transform = 'rotate(' + rot.toFixed(1) + 'deg)';
+    }
+
+    $('#m-walk').textContent = Fmt.dist(Game.walked);
+    $('#m-steps').textContent = Fmt.num(Game.walked / STEP_M);
+    $('#m-time').textContent = Fmt.time(Game.elapsed);
+    $('#m-pace').textContent = Fmt.pace(Game.elapsed, Game.walked);
+
+    $('#st-lvl').textContent = level();
+    $('#st-xp').textContent = Fmt.num(store.d.xp) + ' XP';
+  }
+
+  function level() { return 1 + Math.floor(store.d.xp / LVL_XP); }
+
+  /* ---------------- session end ---------------- */
+  function finish(arrived) {
+    if (!Game.running) return;
+
+    var xp = Math.round(Game.walked * XP_PER_M) + (arrived ? XP_ARRIVE : 0);
+    var rec = {
+      ts: Date.now(),
+      dist: Math.round(Game.walked),
+      sec: Math.round(Game.elapsed),
+      steps: Math.round(Game.walked / STEP_M),
+      target: Math.round(Game.targetDist) || 0,
+      arrived: !!arrived
+    };
+
+    var before = level();
+    store.d.xp += xp;
+    store.d.walks += 1;
+    store.d.history.unshift(rec);
+    if (store.d.history.length > 80) store.d.history.pop();
+    store.save();
+
+    Game.stop();
+    closeSheet();
+    updateHud();
+
+    var lvlUp = level() > before ? 'Новый уровень ' + level() + '. ' : '';
+    var html =
+      '<div class="modal-head">' +
+        '<div class="eyebrow">' + (arrived ? 'Цель достигнута' : 'Прогулка завершена') + '</div>' +
+        '<h2>' + (arrived ? 'Дошли.' : 'Итог прогулки') + '</h2>' +
+      '</div>' +
+      '<div class="result-grid">' +
+        '<div><span>Пройдено</span><b>' + Fmt.dist(rec.dist) + '</b></div>' +
+        '<div><span>Время</span><b>' + Fmt.time(rec.sec) + '</b></div>' +
+        '<div><span>Шаги</span><b>' + Fmt.num(rec.steps) + '</b></div>' +
+        '<div><span>Опыт</span><b>+' + Fmt.num(xp) + '</b></div>' +
+      '</div>' +
+      '<p class="muted">' + (lvlUp || 'Всего пройдено ' + Fmt.dist(store.d.dist) + ', уровень ' + level() + '.') + '</p>' +
+      '<div class="modal-actions">' +
+        '<button class="btn btn-primary" data-act="again">Новая цель</button>' +
+        '<button class="btn btn-ghost" data-act="home">На главную</button>' +
+      '</div>';
+
+    openModal(html);
+  }
+
+  function goHome() {
+    Game.stop();
+    closeModal();
+    closeSheet();
+    $('#demo-note').classList.add('hidden');
+    $('#hud').classList.remove('on');
+    $('#scr-setup').classList.add('on');
+    $('#modal').classList.remove('on');
+    MapCtl.invalidate();
+    $('#st-lvl').textContent = level();
+    $('#st-xp').textContent = Fmt.num(store.d.xp) + ' XP';
+  }
+
+  /* ---------------- modals: history / stats ---------------- */
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function historyView() {
+    var h = store.d.history;
+    var head = '<div class="modal-head"><div class="eyebrow">Архив</div><h2>История</h2></div>';
+    var body = h.length
+      ? h.map(function (r) {
+          var d = new Date(r.ts);
+          var when = d.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          return '<div class="list-row"><div><b>' + Fmt.dist(r.dist) + '</b><span>' + esc(when) +
+            (r.arrived ? ' · цель достигнута' : '') + '</span></div>' +
+            '<div class="lr-meta">' + Fmt.time(r.sec) + '<br>' + Fmt.num(r.steps) + ' шагов</div></div>';
+        }).join('')
+      : '<p class="muted">Пока пусто. Первая прогулка появится здесь.</p>';
+    return head + body + '<div class="modal-actions" style="margin-top:16px">' +
+      '<button class="btn btn-ghost" data-act="close">Закрыть</button></div>';
+  }
+
+  function statsView() {
+    var h = store.d.history;
+    var best = h.reduce(function (a, r) { return Math.max(a, r.dist); }, 0);
+    var avg = h.length ? h.reduce(function (a, r) { return a + r.dist; }, 0) / h.length : 0;
+    var totalSteps = h.reduce(function (a, r) { return a + (r.steps || 0); }, 0);
+    var next = LVL_XP - (store.d.xp % LVL_XP);
+
+    return '<div class="modal-head"><div class="eyebrow">Профиль</div><h2>' + esc(store.d.name || 'Игрок') + '</h2></div>' +
+      '<div class="stat-grid">' +
+        '<div><span>Уровень</span><b>' + level() + '</b></div>' +
+        '<div><span>Опыт</span><b>' + Fmt.num(store.d.xp) + '</b></div>' +
+        '<div><span>Всего пройдено</span><b>' + Fmt.dist(store.d.dist) + '</b></div>' +
+        '<div><span>Прогулок</span><b>' + Fmt.num(store.d.walks) + '</b></div>' +
+        '<div><span>Лучшая</span><b>' + Fmt.dist(best) + '</b></div>' +
+        '<div><span>В среднем</span><b>' + Fmt.dist(avg) + '</b></div>' +
+        '<div><span>Шагов всего</span><b>' + Fmt.num(totalSteps) + '</b></div>' +
+        '<div><span>До уровня</span><b>' + Fmt.num(next) + ' XP</b></div>' +
+      '</div>' +
+      '<div class="modal-actions">' +
+        '<button class="btn btn-ghost" data-act="close">Закрыть</button>' +
+        '<button class="btn btn-ghost" data-act="reset" style="color:var(--faint);font-size:13px;height:40px">Сбросить прогресс</button>' +
+      '</div>';
+  }
+
+  /* ---------------- actions ---------------- */
+  var actions = {
+    start: function () { Game.start(); },
+    center: function () { MapCtl.center(); },
+    layers: function () { Game.toggleLayer(); },
+    newquest: function () { Game.askNewQuest(); },
+    menu: function () { openSheet(); },
+    'close-sheet': function () { closeSheet(); },
+    close: function () { closeModal(); },
+    history: function () { closeSheet(); openModal(historyView()); },
+    stats: function () { closeSheet(); openModal(statsView()); },
+    finish: function () { finish(false); },
+    home: function () { goHome(); },
+    again: function () {
+      closeModal();
+      Game.resume();
+    },
+    reset: function () {
+      if (!window.confirm('Сбросить весь прогресс, историю и статистику?')) return;
+      store.d = { name: store.d.name, xp: 0, dist: 0, walks: 0, history: [], prefs: store.d.prefs };
+      store.save();
+      closeModal();
+      updateHud();
+      toast('Прогресс сброшен');
+    }
+  };
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act]');
+    if (!el) return;
+    var name = el.getAttribute('data-act');
+    var fn = actions[name];
+    if (!fn) return;
+    e.preventDefault();
+    fn(el);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if ($('#modal').classList.contains('on')) { closeModal(); return; }
+    closeSheet();
+  });
+
+  $('#seg-dist').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+  });
+
+  $('#modal').addEventListener('click', function (e) {
+    if (e.target === this) closeModal();
+  });
+
+  /* компас устройства — работает только на телефоне и только по https */
+  window.addEventListener('deviceorientationabsolute', function (e) {
+    if (typeof e.webkitCompassHeading === 'number') {
+      Game.deviceHeading = e.webkitCompassHeading;
+    } else if (e.alpha != null) {
+      Game.deviceHeading = (360 - e.alpha) % 360;
+    }
+    updateHud();
+  }, true);
+
+  window.addEventListener('resize', function () { MapCtl.invalidate(); });
+
+  /* ---------------- boot ---------------- */
+  store.load();
+  $('#inp-name').value = store.d.name || '';
+  $('#chk-demo').checked = !!store.d.prefs.demo;
+  updateHud();
+
+  if (!navigator.geolocation) {
+    $('#geo-hint').textContent = 'Браузер не умеет геолокацию — включите демо-режим.';
+    $('#chk-demo').checked = true;
+  }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    $('#geo-hint').textContent = 'Для GPS страница должна открываться по https. Иначе используйте демо-режим.';
+  }
+})();
+</script>
+</body>
+</html>
