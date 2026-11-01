@@ -1,0 +1,65 @@
+{
+  "name": "noir-browser",
+  "version": "1.0.0",
+  "description": "Noir Browser — минималистичный чёрный браузер на Electron с блокировщиком рекламы (Ghostery/uBlock-совместимый) и встроенным бесплатным ИИ-агентом",
+  "main": "dist/main/main.js",
+  "author": "BalaRmack",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist": "npm run dist:win"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.20.3",
+    "cross-fetch": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.balarmack.noir-browser",
+    "productName": "Noir Browser",
+    "copyright": "Copyright © 2026 BalaRmack",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Noir Browser",
+      "installerLanguages": ["ru_RU", "en_US"]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "BalaRmack",
+      "repo": "Walkgame",
+      "releaseType": "release"
+    }
+  }
+}
