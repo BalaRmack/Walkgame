@@ -1,0 +1,94 @@
+name: Build & Release Noir Browser (Windows .exe)
+
+# Сборка запускается:
+#  - при пуше тега вида v* (например v1.0.1) — версия установщика возьмётся из тега;
+#  - вручную из вкладки Actions (workflow_dispatch), можно указать тег релиза.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег релиза (например v1.0.0). Пусто = v + версия из package.json'
+        required: false
+        type: string
+
+# Встроенного GITHUB_TOKEN достаточно для публикации Releases —
+# отдельный секрет GH_TOKEN добавлять НЕ нужно.
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine release tag & sync version
+        shell: pwsh
+        run: |
+          $tag = ""
+          if ($env:INPUT_TAG) { $tag = $env:INPUT_TAG }
+          elseif ($env:GITHUB_REF -like "refs/tags/*") { $tag = $env:GITHUB_REF -replace "refs/tags/","" }
+          else { $tag = "v" + (node -p "require('./package.json').version") }
+          if ($tag -notmatch '^v') { $tag = "v$tag" }
+          echo "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          $version = $tag -replace '^v',''
+          Write-Host "Release tag: $tag (app version: $version)"
+          npm version $version --no-git-tag-version --allow-same-version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+
+      - name: TypeScript check & build
+        run: npm run build
+
+      - name: Build Windows installer (electron-builder, NSIS x64)
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          # Отключаем попытку подписи без сертификата на CI (не подписано = SmartScreen, Ок)
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Smoke-test packaged app (agent opens example.com, adblocker loads)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path release/win-unpacked -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "Packaged exe not found in release/win-unpacked" }
+          Write-Host "Smoke-testing: $($exe.FullName)"
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test" -WorkingDirectory release/win-unpacked -PassThru -Wait
+          Write-Host "Smoke exit code: $($p.ExitCode)"
+          $result = "release/win-unpacked/noir-smoke-result.json"
+          if (Test-Path $result) { Get-Content $result | Write-Host }
+          if ($p.ExitCode -ne 0) { throw "Smoke test failed with exit code $($p.ExitCode)" }
+
+      - name: Upload build artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: noir-browser-windows
+          path: |
+            release/*.exe
+            release/latest.yml
+          if-no-files-found: error
+
+      - name: Publish GitHub Release with .exe installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Noir Browser ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/latest.yml
+            release/*.exe.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
