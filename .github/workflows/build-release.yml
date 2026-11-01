@@ -78,6 +78,7 @@ jobs:
           path: |
             release/*.exe
             release/latest.yml
+            release/win-unpacked/noir-smoke-result.json
           if-no-files-found: error
 
       - name: Publish GitHub Release with .exe installer

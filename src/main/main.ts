@@ -446,16 +446,23 @@ async function runSmokeTest(): Promise<void> {
 
     const { smokeRunLocalCommand } = require('./agent') as typeof import('./agent');
     const ok = await smokeRunLocalCommand('открой example.com', (line) => log('agent: ' + line));
-    const tab = getActiveTab();
+    // Ждём реальной загрузки: заголовок example.com — «Example Domain».
+    let tab = getActiveTab();
+    for (let i = 0; i < 25 && !(tab?.title ?? '').includes('Example'); i++) {
+      await new Promise((r) => setTimeout(r, 1_000));
+      tab = getActiveTab();
+    }
     log(`agent open handled=${ok} url=${tab?.url} title=${tab?.title}`);
-    result.agentOpen = ok && (tab?.url.includes('example.com') ?? false);
+    result.agentOpen = ok && (tab?.url.includes('example.com') ?? false) && (tab?.title.includes('Example') ?? false);
 
     const { getAdblockStatus } = require('./adblocker') as typeof import('./adblocker');
-    for (let i = 0; i < 25 && !getAdblockStatus().ready; i++) await new Promise((r) => setTimeout(r, 1_000));
+    for (let i = 0; i < 40 && !getAdblockStatus().ready; i++) await new Promise((r) => setTimeout(r, 1_000));
     result.adblock = getAdblockStatus();
     log(`adblock: ${JSON.stringify(result.adblock)}`);
 
-    finish(win && tab ? 0 : 1);
+    const adblock = result.adblock as { ready: boolean; enabled: boolean };
+    // Строгий критерий: окно есть, агент открыл сайт, блокировщик реально загрузился.
+    finish(win && tab && result.agentOpen && adblock.ready && adblock.enabled ? 0 : 1);
   } catch (err) {
     log('ERROR ' + String(err));
     finish(2);
