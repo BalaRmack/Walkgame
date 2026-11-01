@@ -4,7 +4,8 @@
  * контекстное меню. Блокировщик и ИИ-агент живут в отдельных модулях
  * (adblocker.ts, agent.ts) и подключаются отсюда.
  */
-import { app, BrowserWindow, clipboard, ipcMain, nativeTheme, WebContentsView, Menu, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeTheme, WebContentsView, Menu, session, shell } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { TabInfo, TabsState } from '../shared/protocol';
 
@@ -161,15 +162,16 @@ function ensureView(tab: TabRecord): WebContentsView {
   });
   wc.on('did-stop-loading', () => {
     tab.loading = false;
-    tab.url = wc.getURL();
+    const url = wc.getURL();
+    if (!url.startsWith('data:')) tab.url = url; // data: — наша служебная страница ошибки
     broadcastTabs();
   });
   wc.on('did-navigate', (_e, url) => {
-    tab.url = url;
+    if (!url.startsWith('data:')) tab.url = url;
     broadcastTabs();
   });
   wc.on('did-navigate-in-page', (_e, url) => {
-    tab.url = url;
+    if (!url.startsWith('data:')) tab.url = url;
     broadcastTabs();
   });
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -200,7 +202,21 @@ function ensureView(tab: TabRecord): WebContentsView {
   });
 
   attachContextMenu(tab);
+  attachShortcuts(wc);
   return view;
+}
+
+/** Браузерные горячие клавиши, работающие и когда фокус на веб-странице. */
+function attachShortcuts(wc: Electron.WebContents): void {
+  wc.on('before-input-event', (event, input) => {
+    const mod = input.control || input.meta;
+    if (!mod || input.type !== 'keyDown') return;
+    const key = input.key.toLowerCase();
+    if (key === 't') { event.preventDefault(); createTab(); }
+    else if (key === 'w') { event.preventDefault(); closeTab(activeTabId); }
+    else if (key === 'l') { event.preventDefault(); win?.webContents.focus(); win?.webContents.send('ui:focus-omnibox'); }
+    else if (key === 'r' && !input.shift) { /* Ctrl+R оставляем странице только если это не наш фокус — перезагружаем сами */ event.preventDefault(); wc.reload(); }
+  });
 }
 
 function escapeHtml(s: string): string {
@@ -273,6 +289,11 @@ function closeTab(id: number): void {
   broadcastTabs();
 }
 
+/** Закрыть активную вкладку (используется ИИ-агентом). */
+export function closeActiveTab(): void {
+  if (activeTabId !== -1) closeTab(activeTabId);
+}
+
 export function navigateActive(raw: string): void {
   const tab = getActiveTab();
   if (!tab) return;
@@ -337,6 +358,7 @@ function registerIpc(): void {
 }
 
 function createWindow(): void {
+  const iconPath = path.join(__dirname, '..', '..', 'build', 'icon.png');
   win = new BrowserWindow({
     width: 1380,
     height: 880,
@@ -345,7 +367,8 @@ function createWindow(): void {
     frame: false,
     backgroundColor: '#0f0f0f',
     title: 'Noir Browser',
-    icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),
+    // В упакованном приложении иконка окна берётся из .exe; файл нужен только в dev-режиме.
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
@@ -378,14 +401,78 @@ function createWindow(): void {
   });
 }
 
+/** Загрузки — молча в папку «Загрузки», разрешения сайтам не выдаём (приватность по умолчанию). */
+function setupSessionPolicies(): void {
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  session.defaultSession.on('will-download', (_e, item) => {
+    const dir = app.getPath('downloads');
+    let target = path.join(dir, item.getFilename());
+    let n = 1;
+    while (fs.existsSync(target)) {
+      const ext = path.extname(item.getFilename());
+      const base = path.basename(item.getFilename(), ext);
+      target = path.join(dir, `${base} (${n++})${ext}`);
+    }
+    item.setSavePath(target);
+    item.once('done', (_ev, state) => console.log(`[noir-download] ${state}: ${target}`));
+  });
+}
+
+/**
+ * Smoke-тест для CI: `Noir Browser.exe --smoke-test`
+ * Запускает браузер, командой агента открывает example.com, проверяет
+ * блокировщик и пишет noir-smoke-result.json. Используется в GitHub Actions,
+ * чтобы релизный .exe был не просто собран, а реально проверен запуском.
+ */
+async function runSmokeTest(): Promise<void> {
+  const steps: string[] = [];
+  const result: Record<string, unknown> = { startedAt: new Date().toISOString(), steps };
+  const log = (s: string) => { steps.push(s); console.log('[smoke]', s); };
+  let finished = false;
+  const finish = (code: number) => {
+    if (finished) return;
+    finished = true;
+    result.finishedAt = new Date().toISOString();
+    try { fs.writeFileSync(path.join(process.cwd(), 'noir-smoke-result.json'), JSON.stringify(result, null, 2)); } catch { /* ignore */ }
+    try { fs.writeFileSync(path.join(app.getPath('userData'), 'noir-smoke-result.json'), JSON.stringify(result, null, 2)); } catch { /* ignore */ }
+    console.log(code === 0 ? 'SMOKE OK' : `SMOKE FAIL (${code})`);
+    app.exit(code);
+  };
+  setTimeout(() => { log('WATCHDOG TIMEOUT'); finish(3); }, 150_000);
+
+  try {
+    await new Promise((r) => setTimeout(r, 2_500));
+    log(`window created: ${!!win}, tabs: ${tabs.size}`);
+
+    const { smokeRunLocalCommand } = require('./agent') as typeof import('./agent');
+    const ok = await smokeRunLocalCommand('открой example.com', (line) => log('agent: ' + line));
+    const tab = getActiveTab();
+    log(`agent open handled=${ok} url=${tab?.url} title=${tab?.title}`);
+    result.agentOpen = ok && (tab?.url.includes('example.com') ?? false);
+
+    const { getAdblockStatus } = require('./adblocker') as typeof import('./adblocker');
+    for (let i = 0; i < 25 && !getAdblockStatus().ready; i++) await new Promise((r) => setTimeout(r, 1_000));
+    result.adblock = getAdblockStatus();
+    log(`adblock: ${JSON.stringify(result.adblock)}`);
+
+    finish(win && tab ? 0 : 1);
+  } catch (err) {
+    log('ERROR ' + String(err));
+    finish(2);
+  }
+}
+
 app.whenReady().then(() => {
   registerIpc();
+  setupSessionPolicies();
   createWindow();
   // Подключаем блокировщик рекламы и ИИ-агента (модули регистрируют свой IPC сами).
   const { initAdblocker } = require('./adblocker') as typeof import('./adblocker');
   const { initAgent } = require('./agent') as typeof import('./agent');
   initAdblocker(getWindow);
-  initAgent({ getWindow, getActiveTab, createTab, navigateActive });
+  initAgent({ getWindow, getActiveTab, createTab, navigateActive, closeActiveTab });
+
+  if (process.argv.includes('--smoke-test')) void runSmokeTest();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -28,6 +28,11 @@ function status(): AdblockStatus {
   return { enabled, ready, blockedTotal };
 }
 
+/** Статус для smoke-теста и диагностики. */
+export function getAdblockStatus(): AdblockStatus {
+  return status();
+}
+
 function broadcast(): void {
   getWindowRef?.()?.webContents.send('adblock:status', status());
 }
